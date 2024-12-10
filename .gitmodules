@@ -1,0 +1,3 @@
+[submodule "graph-coarsening-up-to-date"]
+	path = graph-coarsening-up-to-date
+	url = https://github.com/SergeiShumilin/graph-coarsening-up-to-date.git
