@@ -2,3 +2,5 @@ wandb/
 data/
 __pycache__/
 *.graphml
+models/*.json
+models/*.pt

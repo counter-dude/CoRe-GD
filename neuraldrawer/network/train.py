@@ -54,10 +54,10 @@ def train_batch(model, device, batch, optimizer, layer_dist, loss_fun, replay_bu
     else:
         pred, states = model(batch, layers, return_layers=True, encode=encode)
     loss += loss_fun(pred,batch)
-    loss.backward()
+    loss.backward() #compute gradients
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     torch.nn.utils.clip_grad_value_(model.parameters(), 1.0)
-    optimizer.step()
+    optimizer.step() # update model parameters 
 
     batch.x = states[-1].detach()
     graphs = batch.detach().cpu().to_data_list()

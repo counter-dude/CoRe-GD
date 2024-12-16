@@ -33,7 +33,7 @@ def get_model(config):
 
     return model
 
-def triplet_to_edge_index(triplets):
+def triplet_to_edge_index(triplets): # Converts triplets (triangles) from Delaunay triangulation into edge indices.
     start = list()
     end =list()
     for i in triplets:
@@ -42,7 +42,7 @@ def triplet_to_edge_index(triplets):
     return [start, end]
 
 
-class CoReGD(torch.nn.Module):
+class CoReGD(torch.nn.Module): #inherits attributes from class Module
     def __init__(self, in_channels, hidden_channels, out_channels, hidden_state_factor, dropout, mlp_depth=2, conv='gin', skip_input=False, skip_prev=False, aggregation='add', normalization=torch.nn.LayerNorm, overlay='knn', overlay_freq='1', knn_k='4'):
         super(CoReGD, self).__init__()
         self.dropout = dropout
@@ -50,7 +50,26 @@ class CoReGD(torch.nn.Module):
         self.overlay = overlay
         self.overlay_freq = overlay_freq
         self.knn_k = knn_k
-       
+        # in channels is the amount of dimensions, out channels would what exactly?
+        #out channels is the amount of 
+            """
+            1. Input Node Features (`in_channels`):
+            - Determines the number of attributes for each graph node at the input stage (batched_data.x).
+            
+            2. Encoded Node Features (`hidden_state_factor * hidden_channels`):
+            - After encoding, node attributes are transformed to this higher-dimensional space.
+            
+            3. Output Node Features (`out_channels`):
+            - Determines the number of attributes for each node in the final output after decoding. What is the output dimension? is it 1? 
+
+            4. Intermediate Features (if skip connections are enabled):
+            - If `skip_input`: Combines input features (`in_channels`) with intermediate features.
+            - If `skip_previous`: Concatenates current and previous hidden features, potentially doubling the dimension.
+
+            5. Rewiring or Edge Modifications:
+            - Depending on the `overlay` method (`knn`, `radius`, or `delaunay`), new edges added to  graph. 
+                 affects the graph structure but not the number of node attributes p. node.
+            """
         if conv == 'gin':
             main_conv = GINEdgeConv(self.get_mlp(hidden_channels, hidden_state_factor*hidden_channels, mlp_depth, hidden_channels, normalization,last_relu=True),
              self.get_mlp(2*hidden_channels, hidden_state_factor*2*hidden_channels, mlp_depth, hidden_channels, normalization, last_relu=True), aggr=aggregation)
@@ -168,4 +187,3 @@ class CoReGD(torch.nn.Module):
             return x, layers
         else:
             return x
-

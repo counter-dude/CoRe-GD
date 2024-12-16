@@ -1,4 +1,5 @@
 from email.policy import default
+import torch
 from test_tube import HyperOptArgumentParser
 from test_tube.hpc import SlurmCluster
 import json
