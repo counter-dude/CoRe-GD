@@ -56,8 +56,8 @@ class ScaledStress(nn.Module):
 
         edge_stress = eu.sub(d).abs().div(d).square() # Computes the edge-level stress: stress= ∣eu−d∣^2 / d^2 -->should I change this function somehow to account for node size????
         index = batch.batch[batch.full_edge_index[0]] # batch.full_edge_index[0] gives the start node of each edge. batch.full_edge_index[0] provides the indices of the start nodes for all edges.
-        graph_stress = torch_scatter.scatter(edge_stress, index) # edge_stress contains the stress values for each edge. torch_scatter.scatter(edge_stress, index) aggregates the edge_stress values for all edges in each graph based on their index
-        return graph_stress if self.reduce is None else self.reduce(graph_stress)
+        graph_stress = torch_scatter.scatter(edge_stress, index) # edge_stress contains the stress values for each edge. Torch scatter aggregates edge stresses into a graph-level stress using the batch indices.
+        return graph_stress if self.reduce is None else self.reduce(graph_stress) # reduce calculats the mean of its input
 
 class Stress(nn.Module):
     def __init__(self, reduce=torch.mean):

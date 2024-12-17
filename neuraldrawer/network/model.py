@@ -23,7 +23,7 @@ def get_model(config):
         print('Unrecognized normalization function: ' + config.normalization)
         exit(1)
 
-    in_channels = config.random_in_channels + config.laplace_eigvec
+    in_channels = config.random_in_channels + config.laplace_eigvec #+1 for the size metric 
     if config.use_beacons:
         in_channels += config.num_beacons * config.encoding_size_per_beacon
 
@@ -32,8 +32,8 @@ def get_model(config):
                     normalization=normalization_function, overlay=config.rewiring, overlay_freq=config.alt_freq, knn_k=config.knn_k)
 
     return model
-
-def triplet_to_edge_index(triplets): # Converts triplets (triangles) from Delaunay triangulation into edge indices.
+# Converts triplets (triangles) from Delaunay triangulation into edge indices.
+def triplet_to_edge_index(triplets): 
     start = list()
     end =list()
     for i in triplets:
@@ -89,7 +89,7 @@ class CoReGD(torch.nn.Module): #inherits attributes from class Module
         self.skip_input = self.get_mlp(hidden_channels + in_channels, hidden_state_factor * hidden_channels, mlp_depth, hidden_channels, normalization) if skip_input else None
         self.skip_previous = self.get_mlp(2*hidden_channels, hidden_state_factor*2*hidden_channels, mlp_depth, hidden_channels, normalization) if skip_prev else None
 
-
+   
     def get_mlp(self, input_dim, hidden_dim, mlp_depth, output_dim, normalization, last_relu = True):
         relu_layer = torch.nn.ReLU()
         modules = [torch.nn.Linear(input_dim, int(hidden_dim)), normalization(int(hidden_dim)), relu_layer, torch.nn.Dropout(self.dropout)]
@@ -103,8 +103,20 @@ class CoReGD(torch.nn.Module): #inherits attributes from class Module
 
         return torch.nn.Sequential(*modules)
 
+    #def encode(self, batched_data):
+    #    return self.encoder(batched_data.x) #This is the old encode function
+    
     def encode(self, batched_data):
+        # Example: Add a "size" feature with a constant or random value
+        node_size = torch.rand((batched_data.x.size(0), 1), device=batched_data.x.device)  # Random size example
+
+        # Concatenate the size feature to the existing node features
+        batched_data.x = torch.cat([batched_data.x, node_size], dim=1)
+
+        # Pass the modified features to the encoder
         return self.encoder(batched_data.x)
+    # would this function do the trick? If I have understood this correctly, the batch is a "batch" of data representing a graph. So adding a metric called node_size as a feature to each node should work
+
 
     def compute_rewiring(self, pos, batched_data):
         if self.overlay == 'knn':

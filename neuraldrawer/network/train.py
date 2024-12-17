@@ -83,12 +83,12 @@ def train(model, device, data_loader, replay_loader, optimizer, layer_dist, loss
 
     return np.mean(losses),0,0
 
-
-@torch.no_grad()
+#
+@torch.no_grad() # The function get_initial_embeddings processes a DataLoader that provides batches of graph data. 
 def get_initial_embeddings(model, device, loader, number):
-    model.eval()
+    model.eval() #Switches the model to evaluation mode. Layers like dropout and batch normalization behave differently in eval() mode: Dropout is disabled. Batch normalization uses running averages instead of batch statistics. What does this mean?
     embeddings_list = []
-    for step, batch in enumerate(loader):
+    for step, batch in enumerate(loader): # so multiple graphs because we have multiple batches.
         batch = batch.to(device)
         batch_clone = batch.clone()
         embeddings = model.encode(batch)
@@ -221,7 +221,7 @@ def train_and_eval(config, cluster=None):
 
     model = get_model(config).to(device)
 
-    replay_buffer_list = get_initial_embeddings(model, device, train_loader, number=config.replay_buffer_size if config.use_replay_buffer else 1)
+    replay_buffer_list = get_initial_embeddings(model, device, train_loader, number=config.replay_buffer_size if config.use_replay_buffer else 1) #not sure what this does. Is it some kind of optimisation for running the models? get_initial_embeddings
     replay_loader = DataLoader(replay_buffer_list, batch_size=config.batch_size, shuffle=True)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
@@ -256,12 +256,12 @@ def train_and_eval(config, cluster=None):
             best_test_loss_normalized = test_loss_normalized
             if config.store_models:
                 store_model(model, name=config.model_name + '_best_valid', config=config)
-    
+        # 3 lines below are just loggin and saving to wandb
         epoch_info = {'run': config.run_number, 'epoch': epoch, 'lr': optimizer.param_groups[0]['lr'], 'optimization_loss': loss, 'valid_loss': valid_loss, 'valid_loss_normalized': valid_loss_normalized, 'test_loss': test_loss, 'test_loss_normalized': test_loss_normalized, 'best_test_loss': best_test_loss, 'best_test_loss_normalized': best_test_loss_normalized}
         print(json.dumps(epoch_info))
         wandb.log(epoch_info)
         
-        scheduler.step(valid_loss)
+        scheduler.step(valid_loss) # Purpose: Adjusts the learning rate based on the valid_loss.
     
     if config.store_models:
         store_model(model, name=config.model_name + '_last', config=config)
