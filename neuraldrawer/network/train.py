@@ -79,7 +79,7 @@ def train(model, device, data_loader, replay_loader, optimizer, layer_dist, loss
             for _ in range(config.num_replay_batches):
                 replay_batch = next(replay_iter)
                 loss = train_batch(model, device, replay_batch, optimizer, layer_dist, loss_fun, replay_buffer_list, False, replay_prob, config, coarsened_graphs, coarsening_matrices)
-                losses.append(loss)
+                losses.append(loss) # keep track of losses. is imported from losses file
 
     return np.mean(losses),0,0
 
@@ -188,6 +188,13 @@ def train_and_eval(config, cluster=None):
 
     loss_fun = losses.ScaledStress()
 
+    # Initialize the stress and overlap loss
+    stress_loss = losses.ScaledStress()  # Existing stress-based loss
+    overlap_loss = losses.OverlapLoss()  # New overlap-based loss
+    combined_loss = losses.CombinedLoss(
+        stress_loss, overlap_loss, stress_weight=1.0, overlap_weight=0.5
+    )  # Combine them with weights
+
     loss_list = []
     train_set, val_set, test_set = get_dataset(config.dataset)
 
@@ -216,15 +223,15 @@ def train_and_eval(config, cluster=None):
 
     out_channels = config.out_dim
     train_loader = DataLoader(train_set, batch_size=config.batch_size, shuffle=True)
-    valid_loader = DataLoader(val_set, batch_size=1, shuffle=False)
+    valid_loader = DataLoader(val_set, batch_size=1, shuffle=False) #batch size to account for metric
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)                                     
 
-    model = get_model(config).to(device)
+    model = get_model(config).to(device) #loads model onto proper device if defined
 
     replay_buffer_list = get_initial_embeddings(model, device, train_loader, number=config.replay_buffer_size if config.use_replay_buffer else 1) #not sure what this does. Is it some kind of optimisation for running the models? get_initial_embeddings
     replay_loader = DataLoader(replay_buffer_list, batch_size=config.batch_size, shuffle=True)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay) #set the optimizer to Adam Optimizer This initializes the Adam optimizer in PyTorch, which is responsible for updating the model's parameters during training to minimize the loss. dapts the learning rate for each parameter using estimates
 
     if config.dataset == 'suitesparse' or config.dataset == 'delaunay':
         # Slightly different setup
@@ -240,12 +247,12 @@ def train_and_eval(config, cluster=None):
 
     layer_dist = torch.distributions.normal.Normal(config.iter_mean, max(config.iter_var, 1e-6), validate_args=None)
 
-    for epoch in range(1, 1 + config.epochs):
+    for epoch in range(1, 1 + config.epochs):  
         layer_num = 10
 
         if config.randomize_between_epochs and config.laplace_eigvec > 0:
-            train_set = preprocessing.reset_eigvecs(train_set, config)
-
+            train_set = preprocessing.reset_eigvecs(train_set, config) # resets eigenvectors. 
+        # train function called below every epoch
         loss, l1_loss, l2_loss = train(model=model, device=device, data_loader=train_loader, replay_loader=replay_loader, optimizer = optimizer, layer_dist=layer_dist, loss_fun=loss_fun, replay_buffer_list=replay_buffer_list, replay_train_prob=config.replay_train_replacement_prob, replay_prob=config.replay_buffer_replacement_prob, config=config, coarsened_graphs=train_coarsened, coarsening_matrices=train_matrices)
         valid_loss, valid_loss_normalized = test(model, device, valid_loader, loss_fun=loss_fun, layer_num=layer_num, coarsened_graphs=val_coarsened, coarsening_matrices=val_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
         test_loss, test_loss_normalized = test(model, device, test_loader, loss_fun=loss_fun, layer_num=layer_num, coarsened_graphs=test_coarsened, coarsening_matrices=test_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
@@ -256,7 +263,7 @@ def train_and_eval(config, cluster=None):
             best_test_loss_normalized = test_loss_normalized
             if config.store_models:
                 store_model(model, name=config.model_name + '_best_valid', config=config)
-        # 3 lines below are just loggin and saving to wandb
+        # 3 lines below are just logging and saving to wandb
         epoch_info = {'run': config.run_number, 'epoch': epoch, 'lr': optimizer.param_groups[0]['lr'], 'optimization_loss': loss, 'valid_loss': valid_loss, 'valid_loss_normalized': valid_loss_normalized, 'test_loss': test_loss, 'test_loss_normalized': test_loss_normalized, 'best_test_loss': best_test_loss, 'best_test_loss_normalized': best_test_loss_normalized}
         print(json.dumps(epoch_info))
         wandb.log(epoch_info)

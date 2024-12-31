@@ -12,7 +12,7 @@ from .convolutions import GRUEdgeConv, GINEdgeConv
 
 from torch_geometric.nn import GATv2Conv
 
-def get_model(config):
+def get_model(config): # uses CoReGD and returns the model according to the config file
     if config.normalization == 'LayerNorm':
         normalization_function = torch.nn.LayerNorm
     elif config.normalization == 'BatchNorm':
@@ -23,7 +23,7 @@ def get_model(config):
         print('Unrecognized normalization function: ' + config.normalization)
         exit(1)
 
-    in_channels = config.random_in_channels + config.laplace_eigvec #+1 for the size metric 
+    in_channels = config.random_in_channels + config.laplace_eigvec + 2 #+2 for the size metric 
     if config.use_beacons:
         in_channels += config.num_beacons * config.encoding_size_per_beacon
 
@@ -32,6 +32,7 @@ def get_model(config):
                     normalization=normalization_function, overlay=config.rewiring, overlay_freq=config.alt_freq, knn_k=config.knn_k)
 
     return model
+
 # Converts triplets (triangles) from Delaunay triangulation into edge indices.
 def triplet_to_edge_index(triplets): 
     start = list()
@@ -50,26 +51,26 @@ class CoReGD(torch.nn.Module): #inherits attributes from class Module
         self.overlay = overlay
         self.overlay_freq = overlay_freq
         self.knn_k = knn_k
-        # in channels is the amount of dimensions, out channels would what exactly?
-        #out channels is the amount of 
-            """
-            1. Input Node Features (`in_channels`):
-            - Determines the number of attributes for each graph node at the input stage (batched_data.x).
-            
-            2. Encoded Node Features (`hidden_state_factor * hidden_channels`):
-            - After encoding, node attributes are transformed to this higher-dimensional space.
-            
-            3. Output Node Features (`out_channels`):
-            - Determines the number of attributes for each node in the final output after decoding. What is the output dimension? is it 1? 
+        # in channels is the amount of dimensions, out channels would what exactly? How do we add a single dimension size of 
+        # out channels is the amount of output dimensions. Would this be 2 then? 
 
-            4. Intermediate Features (if skip connections are enabled):
-            - If `skip_input`: Combines input features (`in_channels`) with intermediate features.
-            - If `skip_previous`: Concatenates current and previous hidden features, potentially doubling the dimension.
+#            1. Input Node Features (`in_channels`):
+#            - Determines the number of attributes for each graph node at the input stage (batched_data.x).
+#            
+#            2. Encoded Node Features (`hidden_state_factor * hidden_channels`):
+#            - After encoding, node attributes are transformed to this higher-dimensional space.
+#            
+#            3. Output Node Features (`out_channels`):
+#            - Determines the number of attributes for each node in the final output after decoding. What is the output dimension? is it 1? 
+#
+#            4. Intermediate Features (if skip connections are enabled):
+#            - If `skip_input`: Combines input features (`in_channels`) with intermediate features.
+#            - If `skip_previous`: Concatenates current and previous hidden features, potentially doubling the dimension.
+#
+#            5. Rewiring or Edge Modifications:
+#            - Depending on the `overlay` method (`knn`, `radius`, or `delaunay`), new edges added to  graph. 
+#                 affects the graph structure but not the number of node attributes p. node.
 
-            5. Rewiring or Edge Modifications:
-            - Depending on the `overlay` method (`knn`, `radius`, or `delaunay`), new edges added to  graph. 
-                 affects the graph structure but not the number of node attributes p. node.
-            """
         if conv == 'gin':
             main_conv = GINEdgeConv(self.get_mlp(hidden_channels, hidden_state_factor*hidden_channels, mlp_depth, hidden_channels, normalization,last_relu=True),
              self.get_mlp(2*hidden_channels, hidden_state_factor*2*hidden_channels, mlp_depth, hidden_channels, normalization, last_relu=True), aggr=aggregation)
@@ -103,20 +104,19 @@ class CoReGD(torch.nn.Module): #inherits attributes from class Module
 
         return torch.nn.Sequential(*modules)
 
-    #def encode(self, batched_data):
-    #    return self.encoder(batched_data.x) #This is the old encode function
-    
     def encode(self, batched_data):
-        # Example: Add a "size" feature with a constant or random value
-        node_size = torch.rand((batched_data.x.size(0), 1), device=batched_data.x.device)  # Random size example
+        return self.encoder(batched_data.x) #This is the old encode function
 
-        # Concatenate the size feature to the existing node features
-        batched_data.x = torch.cat([batched_data.x, node_size], dim=1)
-
-        # Pass the modified features to the encoder
-        return self.encoder(batched_data.x)
-    # would this function do the trick? If I have understood this correctly, the batch is a "batch" of data representing a graph. So adding a metric called node_size as a feature to each node should work
-
+#    def encode(self, batched_data):
+#        # Example: Add a "size" feature with a constant or random value
+#        node_size = torch.rand((batched_data.x.size(0), 1), device=batched_data.x.device)  # Random size example. First part creates a tensor filled with random values, specifically designed to match the number of nodes in the graph batch
+#
+#        # Concatenate the size feature to the existing node features
+#        batched_data.x = torch.cat([batched_data.x, node_size], dim=1) # this would add the feature to the 
+#
+#        # Pass the modified features to the encoder
+#        return self.encoder(batched_data.x)
+#    # would this function do the trick? If I have understood this correctly, the batch is a "batch" of data representing a graph. So adding a metric called node_size as a feature to each node should work
 
     def compute_rewiring(self, pos, batched_data):
         if self.overlay == 'knn':

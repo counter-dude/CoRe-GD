@@ -188,7 +188,7 @@ def compute_positional_encodings_batch(batch, num_beacons, encoding_size_per_bea
     
     return pes_tensor
 
-
+''' # old preprocess function
 def preprocess_dataset(datalist, config):
     spectrals = []
     if config.use_beacons:
@@ -208,6 +208,59 @@ def preprocess_dataset(datalist, config):
         datalist[idx].x = torch.cat((x, beacons, spectral_features), dim=1)
         datalist[idx].x_orig = torch.clone(datalist[idx].x)
     return datalist
+'''
+
+def preprocess_dataset(datalist, config):
+    """
+    Preprocess the dataset to include additional features, such as 2D size metrics (width and height), while retaining the original logic.
+    
+    Args:
+        datalist (list): List of PyTorch Geometric Data objects representing graphs.
+        config (object): Configuration object containing preprocessing parameters.
+
+    Returns:
+        list: List of processed Data objects with updated features.
+    """
+    spectrals = []
+    if config.use_beacons:
+        datalist = compute_positional_encodings(datalist, config.num_beacons, config.encoding_size_per_beacon)
+    
+    for idx in range(len(datalist)):
+        eigenvecs = config.laplace_eigvec
+        beacons = torch.zeros(datalist[idx].num_nodes, 0, dtype=torch.float, device=datalist[idx].x.device)
+        
+        # Add beacon features if enabled
+        if config.use_beacons:
+            beacons = datalist[idx].pe
+        
+        spectral_features = torch.zeros(datalist[idx].num_nodes, 0, dtype=torch.float, device=datalist[idx].x.device)
+        
+        # Add Laplacian eigenvector features if enabled
+        if eigenvecs > 0:
+            pe_transform = AddLaplacian(k=eigenvecs, attr_name="laplace_ev", is_undirected=True, use_cupy=config.use_cupy)
+            datalist[idx] = pe_transform(datalist[idx])
+            spectral_features = datalist[idx].laplace_ev
+        
+        # Random features
+        dim = datalist[idx].x.size(dim=0)
+        x = torch.rand(dim, config.random_in_channels, dtype=torch.float, device=datalist[idx].x.device)
+        
+        # Add 2D size metric as width and height (values between 0.1 and 1.0)
+        # These features represent the width and height of a node, acting as a 2D size metric
+        width = torch.rand((dim, 1), device=datalist[idx].x.device) * (1.0 - 0.1) + 0.1
+        height = torch.rand((dim, 1), device=datalist[idx].x.device) * (1.0 - 0.1) + 0.1
+
+        # Save the original sizes for later use
+        datalist[idx].orig_sizes = torch.cat((width, height), dim=1)
+
+        # Concatenate all features: random features, beacons, spectral features, width, height
+        datalist[idx].x = torch.cat((x, beacons, spectral_features, width, height), dim=1)
+        
+        # Clone the original node features
+        datalist[idx].x_orig = torch.clone(datalist[idx].x)
+    
+    return datalist
+
 
 def reset_randomized_features_batch(batch, config):
     rand_features = torch.rand(batch.x.shape[0], config.random_in_channels, dtype=torch.float, device=batch.x.device)

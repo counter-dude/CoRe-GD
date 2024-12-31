@@ -72,4 +72,80 @@ class Stress(nn.Module):
         index = batch.batch[batch.full_edge_index[0]] 
         graph_stress = torch_scatter.scatter(edge_stress, index)
         return graph_stress if self.reduce is None else self.reduce(graph_stress)
+    
+class OverlapLoss(nn.Module):
+    def __init__(self, reduce=torch.mean):
+        super().__init__()
+        self.reduce = reduce
+
+    def forward(self, node_pos, node_sizes, edge_index):
+        """
+        Calculate overlap loss for all node-pairs in the graph.
+
+        Args:
+            node_pos (Tensor): Node positions [num_nodes, 2].
+            node_sizes (Tensor): Node sizes [num_nodes, 2] (width, height).
+            edge_index (Tensor): Graph edges [2, num_edges].
+
+        Returns:
+            Tensor: Normalized overlap loss for the graph.
+        """
+        # Extract start and end nodes for each edge
+        start, end = edge_index[0], edge_index[1]
+
+        # Retrieve node positions and sizes for start and end nodes
+        pos_start, pos_end = node_pos[start], node_pos[end]
+        size_start, size_end = node_sizes[start], node_sizes[end]
+
+        # Compute distances between node centers
+        distance = torch.norm(pos_start - pos_end, dim=1)
+
+        # Compute overlaps in x and y directions
+        overlap_x = torch.clamp((size_start[:, 0] + size_end[:, 0]) / 2 - torch.abs(pos_start[:, 0] - pos_end[:, 0]), min=0)
+        overlap_y = torch.clamp((size_start[:, 1] + size_end[:, 1]) / 2 - torch.abs(pos_start[:, 1] - pos_end[:, 1]), min=0)
+
+        # Calculate overlap area
+        overlap_area = overlap_x * overlap_y
+
+        # Aggregate overlap loss
+        return overlap_area if self.reduce is None else self.reduce(overlap_area)
+    
+class CombinedLoss(nn.Module):
+    def __init__(self, stress_loss, overlap_loss, stress_weight=1.0, overlap_weight=1.0):
+        """
+        Initialize the combined loss.
+
+        Args:
+            stress_loss (nn.Module): Stress loss function.
+            overlap_loss (nn.Module): Overlap loss function.
+            stress_weight (float): Weight for stress loss.
+            overlap_weight (float): Weight for overlap loss.
+        """
+        super().__init__()
+        self.stress_loss = stress_loss
+        self.overlap_loss = overlap_loss
+        self.stress_weight = stress_weight
+        self.overlap_weight = overlap_weight
+
+    def forward(self, node_pos, node_sizes, batch):
+        """
+        Calculate combined loss for the graph.
+
+        Args:
+            node_pos (Tensor): Node positions [num_nodes, 2].
+            node_sizes (Tensor): Node sizes [num_nodes, 2].
+            batch (Batch): PyTorch Geometric Batch object.
+
+        Returns:
+            Tensor: Combined loss.
+        """
+        # Stress loss
+        stress = self.stress_loss(node_pos, batch)
+
+        # Overlap loss
+        overlap = self.overlap_loss(node_pos, node_sizes, batch.edge_index)
+
+        # Weighted combination
+        total_loss = self.stress_weight * stress + self.overlap_weight * overlap
+        return total_loss
 
