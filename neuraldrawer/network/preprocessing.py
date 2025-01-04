@@ -225,7 +225,7 @@ def preprocess_dataset(datalist, config):
     if config.use_beacons:
         datalist = compute_positional_encodings(datalist, config.num_beacons, config.encoding_size_per_beacon)
     
-    for idx in range(len(datalist)):
+    for idx in range(len(datalist)): #idx means index
         eigenvecs = config.laplace_eigvec
         beacons = torch.zeros(datalist[idx].num_nodes, 0, dtype=torch.float, device=datalist[idx].x.device)
         
