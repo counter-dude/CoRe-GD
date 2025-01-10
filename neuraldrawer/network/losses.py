@@ -219,10 +219,10 @@ class CombinedLoss(nn.Module):
         Initialize the combined loss.
 
         Args:
-            stress_loss (nn.Module): Stress loss function.
-            overlap_loss (nn.Module): Overlap loss function.
-            stress_weight (float): Weight for stress loss.
-            overlap_weight (float): Weight for overlap loss.
+        stress_loss (nn.Module): Stress loss function.
+        overlap_loss (nn.Module): Overlap loss function.
+        stress_weight (float): Weight for stress loss.
+          overlap_weight (float): Weight for overlap loss.
         """
         super().__init__()
         self.stress_loss = stress_loss
@@ -234,16 +234,16 @@ class CombinedLoss(nn.Module):
         """
         Calculate combined loss for the graph.
 
-        Args:
-            node_pos (Tensor): Node positions [num_nodes, 2].
-            node_sizes (Tensor): Node sizes [num_nodes, 2].
-            batch (Batch): PyTorch Geometric Batch object.
+        node_pos (Tensor): Node positions [num_nodes, 2].
+        node_sizes (Tensor): Node sizes [num_nodes, 2].
+        batch (Batch): PyTorch Geometric Batch object.
 
         Returns:
             Tensor: Combined loss (scalar if both losses reduce to a scalar).
         """
         # 1) Compute stress (per-graph or aggregated, depending on the Stress class)
         stress = self.stress_loss(node_pos, batch)
+
 
         # 2) Compute overlap (per-graph or aggregated, depending on the OverlapLoss class)
         overlap = self.overlap_loss(node_pos, node_sizes, batch)
