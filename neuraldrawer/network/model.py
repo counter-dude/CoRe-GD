@@ -16,7 +16,7 @@ def get_model(config): # uses CoReGD and returns the model according to the conf
     if config.normalization == 'LayerNorm':
         normalization_function = torch.nn.LayerNorm
     elif config.normalization == 'BatchNorm':
-        normalization_function = torch.nn.BatchNorm1d
+        normalization_function = torch.nn.Batc
     elif config.normalization == 'None':
         normalization_function = torch.nn.Identity
     else:

@@ -30,26 +30,14 @@ class NormalizedStress(nn.Module):
         graph_stress = torch.div(graph_stress, norm_factor)
 
         return graph_stress if self.reduce is None else self.reduce(graph_stress)
-    
+"""    
 class NormalizedOverlapLoss(nn.Module):
     def __init__(self, reduce=torch.mean):
-        """
-        Computes a normalized overlap loss for each graph in the batch.
-        The overlap for each edge is divided by the sum of node sizes to normalize it.
-        """
+
         super().__init__()
         self.reduce = reduce
 
     def forward(self, node_pos, node_sizes, batch):
-        """
-        Args:
-            node_pos (Tensor): Node positions [num_nodes, 2].
-            node_sizes (Tensor): Node sizes [num_nodes, 2].
-            batch (Batch): PyTorch Geometric Batch object.
-
-        Returns:
-            Tensor: Normalized overlap loss (scalar or per-graph, depending on reduce).
-        """
         # 1) Edge indices and graph indices
         start_indices = batch.full_edge_index[0]
         end_indices = batch.full_edge_index[1]
@@ -79,12 +67,13 @@ class NormalizedOverlapLoss(nn.Module):
 
         # 7) Optionally reduce across all graphs in the batch
         return self.reduce(graph_overlap) if self.reduce is not None else graph_overlap
-
+"""
+"""
 class NormalizedCombinedLoss(nn.Module):
     def __init__(self, stress_loss, overlap_loss, stress_weight=1.0, overlap_weight=1.0, reduce=torch.mean):
-        """
-        Initializes a combined loss that normalizes both stress and overlap losses.
-        """
+        
+        #Initializes a combined loss that normalizes both stress and overlap losses.
+        
         super().__init__()
         self.stress_loss = stress_loss
         self.overlap_loss = overlap_loss
@@ -93,15 +82,7 @@ class NormalizedCombinedLoss(nn.Module):
         self.reduce = reduce
 
     def forward(self, node_pos, node_sizes, batch):
-        """
-        Args:
-            node_pos (Tensor): Node positions [num_nodes, 2].
-            node_sizes (Tensor): Node sizes [num_nodes, 2].
-            batch (Batch): PyTorch Geometric Batch object.
 
-        Returns:
-            Tensor: Normalized combined loss (scalar or per-graph).
-        """
         # 1) Normalized stress loss
         normalized_stress = NormalizedStress(reduce=None)(node_pos, batch)
 
@@ -113,7 +94,7 @@ class NormalizedCombinedLoss(nn.Module):
 
         # 4) Optionally reduce across all graphs in the batch
         return self.reduce(combined_loss) if self.reduce is not None else combined_loss
-
+"""
     
 def get_full_edges(node_pos, batch): # get_full_edges returns the positions of the starting (start) and ending (end) nodes for all edges in the graph.
     edges = node_pos[batch.full_edge_index.T]

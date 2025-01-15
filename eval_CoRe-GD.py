@@ -1,3 +1,4 @@
+#eval_CoRe-GD.py
 import torch
 import json
 from attrdict import AttrDict

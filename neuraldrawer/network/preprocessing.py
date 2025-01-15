@@ -188,7 +188,7 @@ def compute_positional_encodings_batch(batch, num_beacons, encoding_size_per_bea
     
     return pes_tensor
 
-''' # old preprocess function
+""" # old preprocess function
 def preprocess_dataset(datalist, config):
     spectrals = []
     if config.use_beacons:
@@ -208,7 +208,7 @@ def preprocess_dataset(datalist, config):
         datalist[idx].x = torch.cat((x, beacons, spectral_features), dim=1)
         datalist[idx].x_orig = torch.clone(datalist[idx].x)
     return datalist
-'''
+"""
 
 def preprocess_dataset(datalist, config):
     """
