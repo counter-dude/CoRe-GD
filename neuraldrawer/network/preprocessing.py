@@ -229,7 +229,6 @@ def preprocess_dataset(datalist, config):
         eigenvecs = config.laplace_eigvec
         beacons = torch.zeros(datalist[idx].num_nodes, 0, dtype=torch.float, device=datalist[idx].x.device)
         
-        # Add beacon features if enabled
         if config.use_beacons:
             beacons = datalist[idx].pe
         

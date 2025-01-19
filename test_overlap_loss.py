@@ -31,12 +31,12 @@ def build_small_graph_1():
         [1, 2, 2],
     ], dtype=torch.long)
 
-    # Single-graph => batch=0 for all nodes
+    # Single-graph, so batch=0 for all nodes
     data = Data()
     data.full_edge_index = edge_index
     data.batch = torch.zeros(node_pos.size(0), dtype=torch.long)
 
-    # Attach pos/sizes if you like (not strictly needed for OverlapLoss to work).
+    # Attach pos/sizes if one woullld want to (not strictly needed for OverlapLoss to work).
     data.node_pos = node_pos
     data.node_sizes = node_sizes
 
@@ -79,22 +79,22 @@ def build_small_graph_2():
 
 
 def main_sanity_check():
-    # Build two separate small graphs
+    #Build two smll graphs
     data1, node_pos1, node_sizes1 = build_small_graph_1()
     data2, node_pos2, node_sizes2 = build_small_graph_2()
 
-    # Put them into a single Batch => now we have 2 graphs in one mini-batch
+    # Put theminto a single Batch. --> two graphs in one mini-batch
     batched = Batch.from_data_list([data1, data2])
 
     # We'll pass 'reduce=None' so OverlapLoss returns one overlap *per graph*
     overlap_loss_fn = OverlapLoss(reduce=None)
 
-    # We'll need to pass:
+    # dwe do this:
     #  - node positions: concatenated from both graphs
     #  - node sizes
     #  - the batched object
-    # But note, we have them in "data1.node_pos" vs "data2.node_pos", etc.
-    # PyG merges them inside 'batched', so let's manually combine them:
+    #we have them in "data1.node_pos" vs "data2.node_pos", etc.
+    #PyG merges them inside 'batched', so let's manually combine them:
     # Or we can do the trivial approach: they've already been stacked by Batch internally
     # So let's do:
     node_pos = torch.cat([node_pos1, node_pos2], dim=0)
@@ -120,7 +120,7 @@ def main_sanity_check():
     #    There's only one edge => the overlap is 0 => mean => 0
 
     print("Expected Overlap for Graph #1 ~ 0.1667, Graph #2 ~ 0.0")
-    print("If you see [0.166..., 0.0], your OverlapLoss is working as expected.\n")
+    print("If valuewe see is [0.166..., 0.0], OverlapLoss is working as expected.\n")
 
 
 if __name__ == "__main__":
