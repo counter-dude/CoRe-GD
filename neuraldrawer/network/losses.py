@@ -1,3 +1,5 @@
+# losses.py
+
 import torch
 from torch import nn
 import torch_scatter
@@ -30,7 +32,8 @@ class NormalizedStress(nn.Module):
         graph_stress = torch.div(graph_stress, norm_factor)
 
         return graph_stress if self.reduce is None else self.reduce(graph_stress)
-"""    
+    
+
 class NormalizedOverlapLoss(nn.Module):
     def __init__(self, reduce=torch.mean):
 
@@ -67,8 +70,7 @@ class NormalizedOverlapLoss(nn.Module):
 
         # 7) Optionally reduce across all graphs in the batch
         return self.reduce(graph_overlap) if self.reduce is not None else graph_overlap
-"""
-"""
+
 class NormalizedCombinedLoss(nn.Module):
     def __init__(self, stress_loss, overlap_loss, stress_weight=1.0, overlap_weight=1.0, reduce=torch.mean):
         
@@ -94,8 +96,8 @@ class NormalizedCombinedLoss(nn.Module):
 
         # 4) Optionally reduce across all graphs in the batch
         return self.reduce(combined_loss) if self.reduce is not None else combined_loss
-"""
-    
+
+
 def get_full_edges(node_pos, batch): # get_full_edges returns the positions of the starting (start) and ending (end) nodes for all edges in the graph.
     edges = node_pos[batch.full_edge_index.T]
     return edges[:, 0, :], edges[:, 1, :]
@@ -185,8 +187,9 @@ class OverlapLoss(nn.Module):
 
         # 5) Scatter per-edge overlap into a per-graph vector
         #    The graph ID is indicated by batch.batch[start_indices]
+        #    Also I added a factor of 10'000 to the graph overlap since the overlap loss vs stress los is rouhgly 1:30'000
         graph_index = batch.batch[start_indices]
-        graph_overlap = torch_scatter.scatter(overlap_area, graph_index, reduce='mean') # du hast gesagt ich könnte einfach eine for-loop machen, aber habe jetzt einfach gleich wie bei deiner stress klasse scatter benutzt. Sollte also so gehen, oder?
+        graph_overlap = torch_scatter.scatter(overlap_area, graph_index, reduce='mean') # du hast gesagt ich könnte einfach eine for-loop machen, aber habe jetzt einfach gleich wie bei deiner stress klasse scatter benutzt. Sollte also so gehen, oder? 
 
         # 6) Optionally reduce across all graphs in the mini-batch
         if self.reduce is not None:
@@ -232,4 +235,3 @@ class CombinedLoss(nn.Module):
         # 3) Weighted combination
         total_loss = self.stress_weight * stress + self.overlap_weight * overlap
         return total_loss
-

@@ -1,3 +1,5 @@
+# preprocessing.py
+
 from tqdm import tqdm
 import torch
 from torch_geometric.transforms.add_positional_encoding import AddLaplacianEigenvectorPE
@@ -210,54 +212,86 @@ def preprocess_dataset(datalist, config):
     return datalist
 """
 
+def add_2d_box_features(data, config):
+    """
+    Adds 2D box features (width and height) to the node features of a single graph Data object.
+    The values are between 0.1 and 1.0. Also stores orig_sizes for future reference.
+
+    Args:
+        data (Data): A PyG Data object containing 'x' for node features.
+        config: A configuration object, can be used if you need additional parameters.
+
+    Returns:
+        Data: The updated Data object with the new width and height features.
+    """
+    dim = data.num_nodes
+    width = torch.rand((dim, 1), device=data.x.device) * (1.0 - 0.1) + 0.1
+    height = torch.rand((dim, 1), device=data.x.device) * (1.0 - 0.1) + 0.1
+
+    # Save the original sizes for later use
+    data.orig_sizes = torch.cat((width, height), dim=1)
+
+    # Concatenate width & height to the node features
+    data.x = torch.cat((data.x, width, height), dim=1)
+    return data
+
 def preprocess_dataset(datalist, config):
     """
-    Preprocess the dataset to include additional features, such as 2D size metrics (width and height), while retaining the original logic.
-    
+    Preprocess the dataset to include additional features, such as 2D size metrics (width and height),
+    beacon-based positional encodings, and Laplacian eigenvector features.
+
     Args:
-        datalist (list): List of PyTorch Geometric Data objects representing graphs.
+        datalist (list[Data]): List of PyTorch Geometric Data objects.
         config (object): Configuration object containing preprocessing parameters.
 
     Returns:
-        list: List of processed Data objects with updated features.
+        list[Data]: List of processed Data objects with updated features.
     """
-    spectrals = []
+    # If using beacon-based positional encodings:
     if config.use_beacons:
-        datalist = compute_positional_encodings(datalist, config.num_beacons, config.encoding_size_per_beacon)
+        datalist = compute_positional_encodings(
+            datalist, 
+            config.num_beacons, 
+            config.encoding_size_per_beacon
+        )
     
-    for idx in range(len(datalist)): #idx means index
-        eigenvecs = config.laplace_eigvec
-        beacons = torch.zeros(datalist[idx].num_nodes, 0, dtype=torch.float, device=datalist[idx].x.device)
-        
-        if config.use_beacons:
-            beacons = datalist[idx].pe
-        
-        spectral_features = torch.zeros(datalist[idx].num_nodes, 0, dtype=torch.float, device=datalist[idx].x.device)
-        
-        # Add Laplacian eigenvector features if enabled
-        if eigenvecs > 0:
-            pe_transform = AddLaplacian(k=eigenvecs, attr_name="laplace_ev", is_undirected=True, use_cupy=config.use_cupy)
-            datalist[idx] = pe_transform(datalist[idx])
-            spectral_features = datalist[idx].laplace_ev
-        
+    for idx in range(len(datalist)):
+        data = datalist[idx]
+
+        # Beacon embeddings (if enabled)
+        beacons = data.pe if config.use_beacons else torch.zeros(
+            data.num_nodes, 0, 
+            dtype=torch.float, device=data.x.device
+        )
+
+        # Laplacian spectral features (if enabled)
+        spectral_features = torch.zeros(data.num_nodes, 0, dtype=torch.float, device=data.x.device)
+        if config.laplace_eigvec > 0:
+            pe_transform = AddLaplacian(
+                k=config.laplace_eigvec,
+                attr_name="laplace_ev",
+                is_undirected=True,
+                use_cupy=config.use_cupy
+            )
+            data = pe_transform(data)
+            spectral_features = data.laplace_ev
+
         # Random features
-        dim = datalist[idx].x.size(dim=0)
-        x = torch.rand(dim, config.random_in_channels, dtype=torch.float, device=datalist[idx].x.device)
-        
-        # Add 2D size metric as width and height (values between 0.1 and 1.0)
-        # These features represent the width and height of a node, acting as a 2D size metric
-        width = torch.rand((dim, 1), device=datalist[idx].x.device) * (1.0 - 0.1) + 0.1
-        height = torch.rand((dim, 1), device=datalist[idx].x.device) * (1.0 - 0.1) + 0.1
+        num_nodes = data.num_nodes
+        rand_feats = torch.rand(num_nodes, config.random_in_channels, dtype=torch.float, device=data.x.device)
 
-        # Save the original sizes for later use
-        datalist[idx].orig_sizes = torch.cat((width, height), dim=1)
+        # Concatenate random, beacon, and spectral features
+        data.x = torch.cat((rand_feats, beacons, spectral_features), dim=1)
 
-        # Concatenate all features: random features, beacons, spectral features, width, height
-        datalist[idx].x = torch.cat((x, beacons, spectral_features, width, height), dim=1)
+        # Add 2D box features (width, height)
+        data = add_2d_box_features(data, config)
+
+        # Store the final features in x_orig for reference
+        data.x_orig = torch.clone(data.x)
         
-        # Clone the original node features
-        datalist[idx].x_orig = torch.clone(datalist[idx].x)
-    
+        # Update the datalist
+        datalist[idx] = data
+
     return datalist
 
 

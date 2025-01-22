@@ -1,4 +1,4 @@
-
+# train.py
 import torch
 
 from tqdm import tqdm
@@ -63,7 +63,7 @@ def train_batch(model, device, batch, optimizer, layer_dist, loss_fun, replay_bu
     #loss += loss_fun(pred,batch)
 
     # Compute combined loss
-    loss += loss_fun(pred, node_sizes, batch)
+    loss += loss_fun(pred, node_sizes, batch) 
 
     loss.backward() #compute gradients
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -125,23 +125,59 @@ def go_to_coarser_graph(graph, last_embeddings, device, batch, coarsened_graphs,
     graph.coarsening_level = new_level
     return graph
 
+@torch.no_grad()
+def old_test(model, device, loader, loss_fun, layer_num, coarsened_graphs=None, coarsening_matrices=None, coarsen=False, noise=0.01):
+    model.eval()
+    normalized_stress = neuraldrawer.network.losses.NormalizedStress()
+    losses = []
+    losses_normalized = []
+    for step, batch in enumerate(tqdm(loader, desc="Iteration")):
+        batch = batch.to(device)
+        loss = 0
+        pred, states = model(batch, layer_num, return_layers=True)
+        if coarsen:
+            for i in range(1, len(coarsening_matrices[batch.index])+1):
+                batch = go_to_coarser_graph(batch, states[-1], device, True, coarsened_graphs, coarsening_matrices, noise=noise)
+                pred, states = model(batch, layer_num, encode=False, return_layers=True)
+
+        loss += loss_fun(pred, batch)
+        losses.append(loss.item())
+        losses_normalized.append(normalized_stress(pred, batch).item())
+    return np.mean(losses), np.mean(losses_normalized)
 
 
 @torch.no_grad()  #changed for combined_loss now
 def test(model, device, loader, loss_fun, layer_num, coarsened_graphs=None, coarsening_matrices=None, coarsen=False, noise=0.01):
     model.eval()
+
     # normalized_stress = neuraldrawer.network.losses.NormalizedStress() #this was used from before when we wanted the stress as loss and not the combined one.
+    # normalized_combined_loss_fun = neuraldrawer.network.losses.NormalizedCombinedLoss()
 
     # Create a NormalizedCombinedLoss object for logging
-    from neuraldrawer.network.losses import NormalizedStress, NormalizedOverlapLoss, NormalizedCombinedLoss
+    from neuraldrawer.network.losses import NormalizedStress, CombinedLoss, Stress, OverlapLoss, NormalizedCombinedLoss, NormalizedOverlapLoss
 
-    normalized_combined_loss_fun = NormalizedCombinedLoss(
-        stress_loss=NormalizedStress(reduce=None),      # per-graph vector
-        overlap_loss=NormalizedOverlapLoss(reduce=None),
+    
+    combined_loss_fun = CombinedLoss(
+        stress_loss=Stress(reduce=None),      # per-graph vector
+        overlap_loss=OverlapLoss(reduce=None),
         stress_weight=1.0,  # match the weights you use in training
         overlap_weight=0.5, # e.g., 0.5 if that's your config
-        reduce=torch.mean    # final reduction across all graphs
+        #reduce=torch.mean    # final reduction across all graphs
     )
+
+    
+    normalized_stress_loss = NormalizedStress(reduce=torch.mean)  # Adjust as needed
+    normalized_overlap_loss = NormalizedOverlapLoss(reduce=torch.mean)  # Adjust as needed
+
+    # Corrected initialization
+    normalized_combined_loss_fun = neuraldrawer.network.losses.NormalizedCombinedLoss(
+        stress_loss=normalized_stress_loss,  # Corrected argument name
+        overlap_loss=normalized_overlap_loss,  # Corrected argument name
+        stress_weight=1.0,
+        overlap_weight=0.5,
+        reduce=torch.mean
+    )
+    
 
     losses = []
     losses_normalized = []
@@ -158,113 +194,13 @@ def test(model, device, loader, loss_fun, layer_num, coarsened_graphs=None, coar
         loss_val += loss_fun(pred, node_sizes, batch) #loss += loss_fun(pred, batch) #add one more dimesion --> the node sizes...
         losses.append(loss_val.item())      # I just changd the name loss to lass_val, so I know it's a single value
 
+        losses_normalized.append(normalized_combined_loss_fun(pred, node_sizes, batch).item())  #Now we have it set for the combined loss.
         #losses_normalized.append(normalized_stress(pred, batch).item())  #also don't need this anymore, since it was for stress. 
 
-        norm_loss_val = normalized_combined_loss_fun(pred, node_sizes, batch)
-        losses_normalized.append(norm_loss_val.item())
+        #norm_loss_val = normalized_combined_loss_fun(pred, node_sizes, batch)
+        #losses_normalized.append(norm_loss_val.item())
 
     return np.mean(losses), np.mean(losses_normalized)
-
-"""
-@torch.no_grad()
-def test2(model,
-          device,
-          loader,
-          overlap_loss_fun,
-          stress_loss_fun,
-          layer_num=10,
-          stress_weight=1.0,
-          overlap_weight=0.5):
-    
-    Calculate and log:
-      - overlap loss
-      - normalized overlap loss
-      - stress loss
-      - normalized stress loss
-      - combined loss
-      - normalized combined loss
-    for each graph in the loader, then return the mean of each metric.
-
-    Args:
-        model (nn.Module): The trained model.
-        device (torch.device): The device (CPU/GPU) to run the computation.
-        loader (DataLoader): DataLoader for the dataset.
-        overlap_loss_fun (nn.Module): Overlap loss function (e.g. OverlapLoss).
-        stress_loss_fun (nn.Module): Stress loss function (e.g. Stress).
-        layer_num (int): Number of layers to use during model inference.
-        stress_weight (float): Weight for the stress component of the combined loss.
-        overlap_weight (float): Weight for the overlap component of the combined loss.
-
-    Returns:
-        dict: A dictionary with mean values of all six metrics across the loader.
-    
-    model.eval()
-    
-    # Instantiate the normalized versions (for diagnostic logging only)
-    from neuraldrawer.network.losses import NormalizedStress, NormalizedOverlapLoss
-
-    normalized_stress_fun = NormalizedStress(reduce=None)       # Per-graph vector
-    normalized_overlap_fun = NormalizedOverlapLoss(reduce=None) # Per-graph vector
-
-    # Storage for losses across the entire dataset
-    overlap_losses = []
-    normalized_overlap_losses = []
-    stress_losses = []
-    normalized_stress_losses = []
-    combined_losses = []
-    normalized_combined_losses = []
-
-    for batch in tqdm(loader, desc="Calculating Losses (test2)"):
-        batch = batch.to(device)
-        
-        # 1) Forward pass
-        pred, _ = model(batch, layer_num=layer_num, return_layers=True)
-
-        # 2) Retrieve node sizes
-        node_sizes = batch.orig_sizes
-
-        # 3) Calculate the un-normalized individual losses
-        overlap_val = overlap_loss_fun(pred, node_sizes, batch)
-        stress_val = stress_loss_fun(pred, batch)
-
-        # 4) Calculate the un-normalized combined loss
-        combined_val = stress_weight * stress_val + overlap_weight * overlap_val
-
-        # 5) Calculate the normalized individual losses
-        normalized_overlap_val = normalized_overlap_fun(pred, node_sizes, batch)
-        normalized_stress_val = normalized_stress_fun(pred, batch)
-
-        # 6) Calculate the normalized combined loss
-        normalized_combined_val = (stress_weight * normalized_stress_val
-                                   + overlap_weight * normalized_overlap_val)
-
-        # 7) Append each to its list
-        overlap_losses.append(overlap_val.item())
-        stress_losses.append(stress_val.item())
-        combined_losses.append(combined_val.item())
-
-        normalized_overlap_losses.append(normalized_overlap_val.item())
-        normalized_stress_losses.append(normalized_stress_val.item())
-        normalized_combined_losses.append(normalized_combined_val.item())
-
-    # 8) Compute mean values
-    mean_overlap = np.mean(overlap_losses)
-    mean_stress = np.mean(stress_losses)
-    mean_combined = np.mean(combined_losses)
-    mean_norm_overlap = np.mean(normalized_overlap_losses)
-    mean_norm_stress = np.mean(normalized_stress_losses)
-    mean_norm_combined = np.mean(normalized_combined_losses)
-
-    # 9) Return a dictionary with descriptive keys
-    return {
-        "overlap_loss": mean_overlap,
-        "stress_loss": mean_stress,
-        "combined_loss": mean_combined,
-        "normalized_overlap_loss": mean_norm_overlap,
-        "normalized_stress_loss": mean_norm_stress,
-        "normalized_combined_loss": mean_norm_combined
-    }
-"""
 
 @torch.no_grad()
 def test_split_losses(model, device, loader, stress_loss, overlap_loss, combined_loss, layer_num=10):
@@ -452,8 +388,10 @@ def train_and_eval(config, cluster=None):
             stress_loss, overlap_loss, combined_loss,
             layer_num=layer_num
         )
-
-        
+        old_loss, old_loss_normalized = old_test(model, device, train_loader, loss_fun=losses.ScaledStress(), layer_num=layer_num, coarsened_graphs=val_coarsened, coarsening_matrices=val_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
+        old_valid_loss, old_valid_loss_normalized = old_test(model, device, valid_loader, loss_fun=losses.ScaledStress(), layer_num=layer_num, coarsened_graphs=test_coarsened, coarsening_matrices=test_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
+        old_test_loss, old_test_loss_normalized = old_test(model, device, test_loader, loss_fun=losses.ScaledStress(), layer_num=layer_num, coarsened_graphs=test_coarsened, coarsening_matrices=test_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
+    
         if valid_loss <= best_valid_loss:
             best_valid_loss = valid_loss
             best_test_loss = test_loss
@@ -484,6 +422,14 @@ def train_and_eval(config, cluster=None):
             'test_stress_loss': test_stress,
             'test_overlap_loss': test_overlap,
             'test_combined_loss': test_combined,
+
+            # Old loss values
+            'old_train_loss': old_loss,
+            'old_train_loss_normalized': old_loss_normalized,
+            'old_valid_loss': old_valid_loss,
+            'old_valid_loss_normalized': old_valid_loss_normalized,
+            'old_test_loss': old_test_loss,
+            'old_test_loss_normalized': old_test_loss_normalized,
         }
 
         #epoch_info.update(metrics_dict) #just adding the metrics_dict to the epoch info so we see them too.
@@ -496,6 +442,4 @@ def train_and_eval(config, cluster=None):
     
     if config.store_models:
         store_model(model, name=config.model_name + '_last', config=config)
-
-
 
