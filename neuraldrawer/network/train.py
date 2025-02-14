@@ -147,7 +147,7 @@ def old_test(model, device, loader, loss_fun, layer_num, coarsened_graphs=None, 
 
 
 @torch.no_grad()  #changed for combined_loss now
-def test(model, device, loader, loss_fun, layer_num, coarsened_graphs=None, coarsening_matrices=None, coarsen=False, noise=0.01):
+def test(model, device, loader, loss_fun, layer_num, config, coarsened_graphs=None, coarsening_matrices=None, coarsen=False, noise=0.01):
     model.eval()
 
     # normalized_stress = neuraldrawer.network.losses.NormalizedStress() #this was used from before when we wanted the stress as loss and not the combined one.
@@ -156,12 +156,14 @@ def test(model, device, loader, loss_fun, layer_num, coarsened_graphs=None, coar
     # Create a NormalizedCombinedLoss object for logging
     from neuraldrawer.network.losses import NormalizedStress, CombinedLoss, Stress, OverlapLoss, NormalizedCombinedLoss, NormalizedOverlapLoss
 
-    
+    stress_weight = config.stress_weight
+    overlap_weight = config.overlap_weight
+
     combined_loss_fun = CombinedLoss(
         stress_loss=Stress(reduce=None),      # per-graph vector
         overlap_loss=OverlapLoss(reduce=None),
-        stress_weight=1.0,  # match the weights you use in training
-        overlap_weight=0.5, # e.g., 0.5 if that's your config
+        stress_weight=stress_weight,  # match the weights you use in training
+        overlap_weight=overlap_weight, # e.g., 0.5 if that's your config
         #reduce=torch.mean    # final reduction across all graphs
     )
 
@@ -173,8 +175,8 @@ def test(model, device, loader, loss_fun, layer_num, coarsened_graphs=None, coar
     normalized_combined_loss_fun = neuraldrawer.network.losses.NormalizedCombinedLoss(
         stress_loss=normalized_stress_loss,  # Corrected argument name
         overlap_loss=normalized_overlap_loss,  # Corrected argument name
-        stress_weight=1.0,
-        overlap_weight=0.5,
+        stress_weight=stress_weight,
+        overlap_weight=overlap_weight,
         reduce=torch.mean
     )
     
@@ -295,9 +297,15 @@ def train_and_eval(config, cluster=None):
     # Initialize the stress and overlap loss
     stress_loss = losses.Stress()  # Existing stress-based loss, also changed from ScaledStress() to Stress()
     overlap_loss = losses.OverlapLoss()  # New overlap-based loss
+    stress_weight = config.stress_weight
+    overlap_weight = config.overlap_weight
+
     combined_loss = losses.CombinedLoss(
-        stress_loss, overlap_loss, stress_weight=1.0, overlap_weight=0.5
-    )  # Combine them with weights
+    stress_loss,
+    overlap_loss,
+    stress_weight=stress_weight,
+    overlap_weight=overlap_weight
+) # Combine them with weights
 
     loss_list = []
     train_set, val_set, test_set = get_dataset(config.dataset)
@@ -358,8 +366,8 @@ def train_and_eval(config, cluster=None):
             train_set = preprocessing.reset_eigvecs(train_set, config) # resets eigenvectors. 
         # train function called below every epoch. Also, changed all loss_fun to combined_loss for now
         loss, l1_loss, l2_loss = train(model=model, device=device, data_loader=train_loader, replay_loader=replay_loader, optimizer = optimizer, layer_dist=layer_dist, loss_fun=combined_loss, replay_buffer_list=replay_buffer_list, replay_train_prob=config.replay_train_replacement_prob, replay_prob=config.replay_buffer_replacement_prob, config=config, coarsened_graphs=train_coarsened, coarsening_matrices=train_matrices)
-        valid_loss, valid_loss_normalized = test(model, device, valid_loader, loss_fun=combined_loss, layer_num=layer_num, coarsened_graphs=val_coarsened, coarsening_matrices=val_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
-        test_loss, test_loss_normalized = test(model, device, test_loader, loss_fun=combined_loss, layer_num=layer_num, coarsened_graphs=test_coarsened, coarsening_matrices=test_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
+        valid_loss, valid_loss_normalized = test(model, device, valid_loader, loss_fun=combined_loss, layer_num=layer_num, config=config, coarsened_graphs=val_coarsened, coarsening_matrices=val_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
+        test_loss, test_loss_normalized = test(model, device, test_loader, loss_fun=combined_loss, layer_num=layer_num, config=config, coarsened_graphs=test_coarsened, coarsening_matrices=test_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
         # add the losses for the overlap and the stress seperately so we can see them on wandb
 
 #        # Optionally, compute the "test2" diagnostics:

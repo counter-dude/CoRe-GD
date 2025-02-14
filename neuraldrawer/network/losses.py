@@ -111,7 +111,7 @@ class ScaledStress(nn.Module):
     def forward(self, node_pos, batch):
         start, end = get_full_edges(node_pos, batch)
         eu = (start - end).norm(dim=1) # is this the euclidean distance between connected nodes in the embedding space for each edge?
-        d = batch.full_edge_attr[:, 0] # original graph distances d fro the edge attributes
+        d = batch.full_edge_attr[:, 0] # original graph distances d from the edge attributes
         
         index = batch.batch[batch.full_edge_index[0]]
         scale = torch_scatter.scatter((eu/d)**2, index) / torch_scatter.scatter(eu/d, index)

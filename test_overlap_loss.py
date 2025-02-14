@@ -189,3 +189,4 @@ def main_sanity_check():
 if __name__ == "__main__":
     main_sanity_check()
 
+#this works by the way. I have a separate file for the synthetic losses, as requested on meeting 17.1.2025.

@@ -224,9 +224,15 @@ def add_2d_box_features(data, config):
     Returns:
         Data: The updated Data object with the new width and height features.
     """
+    #with random box sizes:
+    #dim = data.num_nodes
+    #width = torch.rand((dim, 1), device=data.x.device) * (1.0 - 0.1) + 0.1
+    #height = torch.rand((dim, 1), device=data.x.device) * (1.0 - 0.1) + 0.1
+
+    #quick change to have constant box sizes. This will help us to compare different runs:
     dim = data.num_nodes
-    width = torch.rand((dim, 1), device=data.x.device) * (1.0 - 0.1) + 0.1
-    height = torch.rand((dim, 1), device=data.x.device) * (1.0 - 0.1) + 0.1
+    width = torch.ones((dim, 1), device=data.x.device)
+    height = torch.ones((dim, 1), device=data.x.device)
 
     # Save the original sizes for later use
     data.orig_sizes = torch.cat((width, height), dim=1)
@@ -315,4 +321,3 @@ def reset_eigvecs(datalist, config):
         datalist[idx].x[:,-config.laplace_eigvec:] = spectral_features
         datalist[idx].x_orig[:,-config.laplace_eigvec:] = spectral_features
     return datalist
-

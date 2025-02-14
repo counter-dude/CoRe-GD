@@ -42,5 +42,7 @@
     "use_replay_buffer": true,
     "use_cupy": true,
     "coarsen": false,
-    "coarsen_noise": 0.1
+    "coarsen_noise": 0.1,
+    "stress_weight": 1.0,
+    "overlap_weight": 10.0
 }

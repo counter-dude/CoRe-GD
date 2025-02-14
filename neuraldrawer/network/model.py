@@ -1,3 +1,5 @@
+# model.py
+
 import torch
 import torch.nn.functional as F
 
@@ -193,7 +195,7 @@ class CoReGD(torch.nn.Module): #inherits attributes from class Module
             layers.append(x)
 
         x = self.decoder(x)
-        x = torch.sigmoid(x)
+        #x = torch.sigmoid(x) # We comment this so that the output is not sigmoided and the output is not between 0 and 1, should eliminate the "rounding errors" we have. 
         
         if return_layers:
             return x, layers
