@@ -197,6 +197,66 @@ class OverlapLoss(nn.Module):
         else:
             return graph_overlap
     
+class RefPositionLoss(nn.Module):
+    """
+    Penalizes the difference between current predicted positions and stored
+    reference positions (e.g., from a base model). By default, computes
+    MSE over all nodes in a batch.
+    """
+    def __init__(self, reduce=torch.mean):
+        super().__init__()
+        self.reduce = reduce
+
+    def forward(self, pred_positions, batch):
+        # If there's no ref_positions, return 0 so we don't break training
+        if not hasattr(batch, "ref_positions"):
+            return torch.tensor(0.0, device=pred_positions.device)
+
+        ref_positions = batch.ref_positions.to(pred_positions.device)
+        sq_diffs = (pred_positions - ref_positions).pow(2).sum(dim=-1)  # MSE per node
+        if self.reduce is not None:
+            return self.reduce(sq_diffs)  # e.g., mean
+        else:
+            return sq_diffs
+
+class CombinedLossWithPosition(nn.Module):
+    """
+    A combined loss that sums:
+      - stress_loss  (weighted by stress_weight),
+      - overlap_loss (weighted by overlap_weight),
+      - position_loss (weighted by position_weight).
+    """
+    def __init__(
+        self,
+        stress_loss,
+        overlap_loss,
+        position_loss,
+        stress_weight=1.0,
+        overlap_weight=1.0,
+        position_weight=0.0  # 0 by default -> no ref-position penalty
+    ):
+        super().__init__()
+        self.stress_loss = stress_loss
+        self.overlap_loss = overlap_loss
+        self.position_loss = position_loss
+        self.stress_weight = stress_weight
+        self.overlap_weight = overlap_weight
+        self.position_weight = position_weight
+
+    def forward(self, pred_positions, node_sizes, batch):
+        # 1) Stress
+        stress_val = self.stress_loss(pred_positions, batch)    # e.g. shape [num_graphs] or scalar
+        # 2) Overlap
+        overlap_val = self.overlap_loss(pred_positions, node_sizes, batch)
+        # 3) Reference position alignment
+        pos_val = self.position_loss(pred_positions, batch)
+
+        # Weighted sum
+        total = (self.stress_weight * stress_val
+                 + self.overlap_weight * overlap_val
+                 + self.position_weight * pos_val)
+        return total
+
 class CombinedLoss(nn.Module):
     def __init__(self, stress_loss, overlap_loss, stress_weight=1.0, overlap_weight=1.0):
         """

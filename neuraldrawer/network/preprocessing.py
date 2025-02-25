@@ -321,3 +321,25 @@ def reset_eigvecs(datalist, config):
         datalist[idx].x[:,-config.laplace_eigvec:] = spectral_features
         datalist[idx].x_orig[:,-config.laplace_eigvec:] = spectral_features
     return datalist
+
+def attach_ref_positions(datalist, coords_list):
+    """
+    Attach reference positions (x,y) to each Data object in the datalist. These are the positions from our base model. 
+
+    Args:
+        datalist (list[Data]): List of PyG Data objects.
+        coords_list (list[np.ndarray]): List of NumPy arrays, where
+            coords_list[i].shape == [num_nodes_i, 2].
+    Returns:
+        list[Data]: The modified list of Data objects with .ref_positions set.
+    """
+    if len(datalist) != len(coords_list):
+        raise ValueError("Mismatch in length: datalist vs. coords_list")
+
+    for i, data in enumerate(datalist):
+        ref_np = coords_list[i]  # shape [num_nodes, 2]
+        # Convert to PyTorch
+        ref_torch = torch.tensor(ref_np, dtype=torch.float)
+        data.ref_positions = ref_torch
+
+    return datalist

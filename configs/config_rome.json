@@ -44,5 +44,8 @@
     "coarsen": false,
     "coarsen_noise": 0.1,
     "stress_weight": 1.0,
-    "overlap_weight": 10.0
+    "overlap_weight": 10000.0,
+    "position_weight": 0.0,
+    "use_ref_positions": false,
+    "save_base_model_coords": false
 }
