@@ -15,7 +15,7 @@ from eval_CoRe_GD import load_model_and_config
 def main():
     # Define paths (adjust as needed since I will be using other datasets/models)
     model_path = "/itet-stor/jangus/net_scratch/Thesis_J/CoRe-GD/models/CoRe-GD_rome_best_valid.pt"
-    config_path = "/itet-stor/jangus/net_scratch/Thesis_J/CoRe-GD/models/CoRe-GD_rome_best_valid.json"
+    config_path = "/itet-stor/jangus/net_scratch/Thesis_J/CoRe-GD/configs/config_rome.json"
     dataset_root = "/itet-stor/jangus/net_scratch/Thesis_J/CoRe-GD/data/Rome"
     output_dir = "/itet-stor/jangus/net_scratch/Thesis_J/CoRe-GD/inference_results/" 
     # this will just allow me to make a new directory once I start using the code for other data. 

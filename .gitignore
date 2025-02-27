@@ -6,4 +6,4 @@ models/*.json
 models/*.pt
 *.out
 *.err
-slurm_log/
+slurm_log/inference_results/

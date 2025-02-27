@@ -355,35 +355,37 @@ def train_and_eval(config, cluster=None):
     # ----------------------------------------------------------------------
     if getattr(config, "use_ref_positions", False):
         import os
-        
-        # 1) Load your saved coords
-        #    (Adjust path/name as needed, or read from config.ref_coords_path)
-        coords_path = "/itet-stor/jangus/net_scratch/Thesis_J/CoRe-GD/inference_results/base_model_coords.npy"
-        
+
+        # Path to the reference coordinates file
+        coords_path = "/itet-stor/jangus/net_scratch/Thesis_J/CoRe-GD/data/Rome/dataset_rome_base_saved/xxx_ref_coordinates.npy"
+
         if os.path.exists(coords_path):
             print(f"Loading reference coordinates from: {coords_path}")
             all_coords = np.load(coords_path, allow_pickle=True)
-            
-            # 2) Slice them out for train, val, test sets
+
+            # Ensure the dataset splits match
             train_size = len(train_set)
             val_size   = len(val_set)
-            # test_size = len(test_set)
-            
+            test_size  = len(test_set)
+
+            assert len(all_coords) == train_size + val_size + test_size, \
+                f"Mismatch: coord file has {len(all_coords)} entries, expected {train_size + val_size + test_size}"
+
+            # Slice into train, val, test
             train_coords = all_coords[:train_size]
             val_coords   = all_coords[train_size : train_size + val_size]
-            test_coords  = all_coords[train_size + val_size : train_size + val_size + len(test_set)]
+            test_coords  = all_coords[train_size + val_size : ]
 
-            # 3) Attach
+            # Attach coordinates
             train_set = preprocessing.attach_ref_positions(train_set, train_coords)
             val_set   = preprocessing.attach_ref_positions(val_set,   val_coords)
             test_set  = preprocessing.attach_ref_positions(test_set,  test_coords)
-            
+
             print("Attached ref_positions to train, val, and test Data objects.")
         else:
             print(f"Warning: coords_path '{coords_path}' not found. Skipping ref_positions attachment.")
     else:
         print("config.use_ref_positions is False. Skipping reference positions attachment.")
-
 
 
     # Build DataLoaders

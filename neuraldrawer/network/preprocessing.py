@@ -333,6 +333,9 @@ def attach_ref_positions(datalist, coords_list):
     Returns:
         list[Data]: The modified list of Data objects with .ref_positions set.
     """
+    print(f"Length of datalist: {len(datalist)}")
+    print(f"Length of coords_list: {len(coords_list)}")
+
     if len(datalist) != len(coords_list):
         raise ValueError("Mismatch in length: datalist vs. coords_list")
 
