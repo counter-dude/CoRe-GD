@@ -186,6 +186,7 @@ def test(model, device, loader, loss_fun, layer_num, config, coarsened_graphs=No
     )
     
 
+
     losses = []
     losses_normalized = []
     for step, batch in enumerate(tqdm(loader, desc="Iteration")):
@@ -208,6 +209,62 @@ def test(model, device, loader, loss_fun, layer_num, config, coarsened_graphs=No
         #losses_normalized.append(norm_loss_val.item())
 
     return np.mean(losses), np.mean(losses_normalized)
+
+
+@torch.no_grad()
+def flexible_test(
+    model,
+    device,
+    loader,
+    loss_fun,
+    layer_num,
+    config,
+    coarsened_graphs=None,
+    coarsening_matrices=None,
+    coarsen=False,
+    noise=0.01
+):
+    """
+    Evaluates the model on a given DataLoader, returning (avg_loss, avg_loss_normalized).
+    - avg_loss: Mean of combined_loss_fn over all graphs
+    - avg_loss_normalized: Mean of (combined_loss / num_nodes_in_graph)
+    """
+    model.eval()
+
+    total_raw_loss = 0.0
+    total_norm_loss = 0.0
+    count = 0  # number of graphs processed
+
+    for step, batch in enumerate(tqdm(loader, desc="Flexible Test")):
+        batch = batch.to(device)
+
+        # Forward pass
+        pred, states = model(batch, layer_num, return_layers=True)
+        
+        # Optional coarsening
+        if coarsen and coarsening_matrices is not None and coarsened_graphs is not None:
+            for i in range(1, len(coarsening_matrices[batch.index]) + 1):
+                batch = go_to_coarser_graph(batch, states[-1], device, True, coarsened_graphs, coarsening_matrices, noise=noise)
+                pred, states = model(batch, layer_num, encode=False, return_layers=True)
+
+        # Compute the raw combined loss for this graph
+        node_sizes = batch.orig_sizes
+        raw_loss = loss_fun(pred, node_sizes, batch)  # e.g. Stress + Overlap (+ RefPos)
+
+        # Normalize by number of nodes in this graph
+        num_nodes_in_graph = batch.num_nodes  # total nodes in the batch (usually 1 graph if batch_size=1)
+        norm_loss = raw_loss / float(num_nodes_in_graph)
+
+        # Accumulate sums
+        total_raw_loss += raw_loss.item()
+        total_norm_loss += norm_loss.item()
+        count += 1
+
+    # Return MEAN across all graphs
+    avg_loss = total_raw_loss / count
+    avg_loss_normalized = total_norm_loss / count
+    return avg_loss, avg_loss_normalized
+
 
 @torch.no_grad()
 def test_split_losses(model, device, loader, stress_loss, overlap_loss, combined_loss, layer_num=10):
@@ -423,8 +480,8 @@ def train_and_eval(config, cluster=None):
             train_set = preprocessing.reset_eigvecs(train_set, config) # resets eigenvectors. 
         # train function called below every epoch. Also, changed all loss_fun to combined_loss for now
         loss, l1_loss, l2_loss = train(model=model, device=device, data_loader=train_loader, replay_loader=replay_loader, optimizer = optimizer, layer_dist=layer_dist, loss_fun=combined_loss_fn, replay_buffer_list=replay_buffer_list, replay_train_prob=config.replay_train_replacement_prob, replay_prob=config.replay_buffer_replacement_prob, config=config, coarsened_graphs=train_coarsened, coarsening_matrices=train_matrices)
-        valid_loss, valid_loss_normalized = test(model, device, valid_loader, loss_fun=combined_loss_fn, layer_num=layer_num, config=config, coarsened_graphs=val_coarsened, coarsening_matrices=val_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
-        test_loss, test_loss_normalized = test(model, device, test_loader, loss_fun=combined_loss_fn, layer_num=layer_num, config=config, coarsened_graphs=test_coarsened, coarsening_matrices=test_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
+        valid_loss, valid_loss_normalized = flexible_test(model, device, valid_loader, loss_fun=combined_loss_fn, layer_num=layer_num, config=config, coarsened_graphs=val_coarsened, coarsening_matrices=val_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
+        test_loss, test_loss_normalized = flexible_test(model, device, test_loader, loss_fun=combined_loss_fn, layer_num=layer_num, config=config, coarsened_graphs=test_coarsened, coarsening_matrices=test_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
         # add the losses for the overlap and the stress seperately so we can see them on wandb
 
 #        # Optionally, compute the "test2" diagnostics:
@@ -463,6 +520,34 @@ def train_and_eval(config, cluster=None):
             best_test_loss_normalized = test_loss_normalized
             if config.store_models:
                 store_model(model, name=config.model_name + '_best_valid', config=config)
+
+        # Compute Reference Position Loss for train, val, and test
+        train_refpos_loss, val_refpos_loss, test_refpos_loss = 0, 0, 0
+
+        if config.position_weight > 0:
+            train_refpos_loss = test(
+                model, device, train_loader, 
+                loss_fun=lambda pred, _, batch: position_loss_fn(pred, batch), #Track only reference position loss! also, the node sizes are not needed here, so we use lambda to ignore them.
+                layer_num=layer_num,
+                config=config
+            )[0]
+
+            val_refpos_loss = test(
+                model, device, valid_loader, 
+                loss_fun=lambda pred, _, batch: position_loss_fn(pred, batch),
+                layer_num=layer_num,
+                config=config
+            )[0]
+
+            test_refpos_loss = test(
+                model, device, test_loader, 
+                loss_fun=lambda pred, _, batch: position_loss_fn(pred, batch),
+                layer_num=layer_num,
+                config=config
+            )[0]
+
+
+
         # lines below are just logging and saving to wandb
         # 4) Add the separate losses to your logging dict
         epoch_info = {
@@ -487,6 +572,12 @@ def train_and_eval(config, cluster=None):
             'test_stress_loss': test_stress,
             'test_overlap_loss': test_overlap,
             'test_combined_loss': test_combined,
+
+            # NEW: Reference Position Loss tracking
+            'train_refpos_loss': train_refpos_loss,
+            'valid_refpos_loss': val_refpos_loss,
+            'test_refpos_loss': test_refpos_loss,
+
 
             # Old loss values
             'old_train_loss': old_loss,

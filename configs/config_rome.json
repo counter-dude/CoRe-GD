@@ -47,5 +47,5 @@
     "overlap_weight": 10000.0,
     "position_weight": 1.0,
     "use_ref_positions": true,
-    "save_base_model_coords": true
+    "save_base_model_coords": false
 }

@@ -86,3 +86,7 @@ if __name__ == "__main__":
         cluster.optimize_parallel_cluster_gpu(train_and_eval, nb_trials=None, job_name=job_name, job_display_name='NeuralDrawer')
     else:
         train_and_eval(args)
+
+# run the experiment like this, meaning start creating model: /itet-stor/jangus/net_scratch/conda_envs/CoRe-GD/bin/python run_experiment.py --config configs/config_rome.json
+# somehow the python version is not the same as the one in the conda env, so I have to use the full path to the python executable
+# /itet-stor/jangus/net_scratch/conda_envs/CoRe-GD/bin/python run_experiment.py --config configs/config_rome.json

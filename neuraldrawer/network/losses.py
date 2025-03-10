@@ -233,7 +233,7 @@ class CombinedLossWithPosition(nn.Module):
         position_loss,
         stress_weight=1.0,
         overlap_weight=1.0,
-        position_weight=0.0  # 0 by default -> no ref-position penalty
+        position_weight=1.0  # 0 by default -> no ref-position penalty
     ):
         super().__init__()
         self.stress_loss = stress_loss
