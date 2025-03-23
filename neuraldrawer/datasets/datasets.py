@@ -34,7 +34,7 @@ from scipy.spatial import Delaunay
 DATA_ROOT = "data"
 DEEPGD_DATA_ROOT = "deepgd_data"
 
-def get_dataset(dataset_name, for_DeepGD=False):
+def get_dataset(dataset_name, for_DeepGD=False, shuffle=True):
     if for_DeepGD:
         data_root = DEEPGD_DATA_ROOT
         transform = convert_for_DeepGD
@@ -50,7 +50,10 @@ def get_dataset(dataset_name, for_DeepGD=False):
         else:
             dataset = RomeDataset()
         datalist = list(dataset)
-        random.shuffle(datalist)
+
+        # shuffle only if it says so in the argument
+        if shuffle:
+            random.shuffle(datalist)
         train = datalist[:10000]
         val = datalist[11000:12000]
         test = datalist[10000:11000]

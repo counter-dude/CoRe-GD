@@ -43,9 +43,10 @@
     "use_cupy": true,
     "coarsen": false,
     "coarsen_noise": 0.1,
-    "stress_weight": 1.0,
+    "stress_weight": 0.0,
     "overlap_weight": 10000.0,
     "position_weight": 1.0,
     "use_ref_positions": true,
+    "use_ref_positions_for_inference": true,
     "save_base_model_coords": false
 }

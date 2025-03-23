@@ -25,7 +25,12 @@ def get_model(config): # uses CoReGD and returns the model according to the conf
         print('Unrecognized normalization function: ' + config.normalization)
         exit(1)
 
-    in_channels = config.random_in_channels + config.laplace_eigvec + 2 #+2 for the size metric 
+    in_channels = (
+    config.random_in_channels
+    + config.laplace_eigvec
+    + 2  # +2 for the 2D box
+    + (2 if config.use_ref_positions else 0)  # +2 more if using reference positions
+    )
     if config.use_beacons:
         in_channels += config.num_beacons * config.encoding_size_per_beacon
 

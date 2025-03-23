@@ -28,15 +28,46 @@ from torch_geometric.data import Batch
 from torch_geometric.utils import to_undirected
 from neuraldrawer.network.losses import (
     Stress, OverlapLoss, RefPositionLoss,
-    CombinedLossWithPosition
+    CombinedLossWithPosition, CombinedLoss
 )
 # loss_fun stands for loss_FUNCTION...
 
 MODEL_DIRECTORY = 'models/'
 
+def print_full_node_features(graph, graph_index, dataset_name):
+    """Prints full feature matrix of the first 5 nodes, including ref_positions."""
+    print(f"\n🔹 [DEBUG] {dataset_name} - Graph {graph_index} Node Features:\n")
+    print(f"  - Num nodes: {graph.num_nodes}")
+    print(f"  - Num edges: {graph.num_edges}")
+
+    # Check if ref_positions exist
+    has_ref_positions = hasattr(graph, "ref_positions")
+
+    # Extract node features (x) and append ref_positions if available
+    if hasattr(graph, "x"):
+        node_features = graph.x.clone().detach()  # Clone to avoid modifying tensor in-place
+
+        if has_ref_positions:
+            ref_pos = graph.ref_positions.clone().detach()  # Ensure it's on CPU for printing
+            node_features = torch.cat([node_features, ref_pos], dim=-1)  # Append ref_positions as extra columns
+
+        print(f"  🔸 Full Node Features (x + ref_positions) for First 5 Nodes in Graph {graph_index}:")
+        print(node_features[:5])  # Print only first 5 nodes
+
+    else:
+        print(f"⚠️ Graph {graph_index} has no `x` feature matrix!")
+
+
 def train_batch(model, device, batch, optimizer, layer_dist, loss_fun, replay_buffer_list, encode, replacement_prob, config, coarsened_graphs=None, coarsening_matrices=None):
     model.train()
     batch = batch.to(device)
+
+    #Debug check if xy positions are present before processing
+    #if hasattr(batch, "ref_positions"):
+     #   print(f"[Before] Batch ref_positions:\n{batch.ref_positions[:5]}")  # Print first 5 nodes
+    #if hasattr(batch, "x"):
+     #   print(f"[Before] Batch x:\n{batch.x[:5]}")  # Print first 5 features
+    
     optimizer.zero_grad()
     layers = max(int(layer_dist.sample().item() + 0.5), 1)
     loss=0
@@ -68,7 +99,7 @@ def train_batch(model, device, batch, optimizer, layer_dist, loss_fun, replay_bu
     #loss += loss_fun(pred,batch)
 
     # Compute combined loss
-    loss += loss_fun(pred, node_sizes, batch) 
+    loss = loss_fun(pred, node_sizes, batch)
 
     loss.backward() #compute gradients
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -86,6 +117,14 @@ def train_batch(model, device, batch, optimizer, layer_dist, loss_fun, replay_bu
 def train(model, device, data_loader, replay_loader, optimizer, layer_dist, loss_fun, replay_buffer_list, replay_train_prob, replay_prob, config, coarsened_graphs, coarsening_matrices):
     model.train()
     losses = []
+
+    first_batch = next(iter(data_loader))  # Get the first batch
+
+    #Debug: Check xy positions BEFORE any modifications
+    #print(f"[Before] First batch ref_positions:\n{first_batch.ref_positions[:5] if hasattr(first_batch, 'ref_positions') else 'No ref_positions'}")
+    #print(f"[Before] First batch x:\n{first_batch.x[:5] if hasattr(first_batch, 'x') else 'No x found'}")
+
+
     if config.use_replay_buffer:
         replay_iter = itertools.cycle(replay_loader)
     for step, batch in enumerate(tqdm(data_loader, desc="Iteration")):
@@ -354,7 +393,7 @@ def train_and_eval(config, cluster=None):
     device = f'cuda:{config.device}' if torch.cuda.is_available() else 'cpu'
     device = torch.device(device)
 
-    loss_fun = losses.Stress() #before it was losses. ScaledStress() but we just want the simple losses.Stress() for now
+    #loss_fun = losses.Stress() #before it was losses. ScaledStress() but we just want the simple losses.Stress() for now
 
     # Example: parse the stress, overlap, and position weights
     stress_weight = config.stress_weight       # e.g. 1.0
@@ -367,7 +406,15 @@ def train_and_eval(config, cluster=None):
     position_loss_fn = RefPositionLoss()  # The new one for reference coords
 
     # Build the combined loss
-    combined_loss_fn = CombinedLossWithPosition(
+    combined_loss_fn = CombinedLoss(
+        stress_loss=stress_loss_fn,
+        overlap_loss=overlap_loss_fn,
+        stress_weight=stress_weight,
+        overlap_weight=overlap_weight,
+    ) # Combine them with weights
+
+    # Build the combined loss
+    combined_loss_with_position_fn = CombinedLossWithPosition(
         stress_loss=stress_loss_fn,
         overlap_loss=overlap_loss_fn,
         position_loss=position_loss_fn,
@@ -376,8 +423,12 @@ def train_and_eval(config, cluster=None):
         position_weight=position_weight
     ) # Combine them with weights
 
+    loss_fun = combined_loss_with_position_fn
+
     loss_list = []
     train_set, val_set, test_set = get_dataset(config.dataset)
+
+
 
     if config.coarsen:
         train_set, train_coarsened, train_matrices = create_coarsened_dataset(config, train_set)
@@ -391,10 +442,43 @@ def train_and_eval(config, cluster=None):
         test_coarsened = None
         test_matrices = None
         
+
+        # Conditionally attach reference positions
+        # Only if config.use_ref_positions is True
+        # Attach reference positions if applicable
+        if config.use_ref_positions:
+            import os
+
+            REF_COORDS_PATH = "/itet-stor/jangus/net_scratch/Thesis_J/CoRe-GD/inference_results/base_model_coords/base_model_coords.npy"
+
+            if not os.path.exists(REF_COORDS_PATH):
+                raise FileNotFoundError(f"❌ Reference coordinates file '{REF_COORDS_PATH}' not found!")
+
+            ref_coords = np.load(REF_COORDS_PATH, allow_pickle=True)
+
+            # Ensure dataset sizes match
+            total_graphs = len(train_set) + len(val_set) + len(test_set)
+            assert len(ref_coords) == total_graphs, \
+                f"❌ Mismatch: ref_coords has {len(ref_coords)} entries, expected {total_graphs}"
+
+            # Attach reference positions to dataset splits
+            train_set = attach_ref_positions(train_set, ref_coords[:len(train_set)])
+            val_set   = attach_ref_positions(val_set, ref_coords[len(train_set):len(train_set) + len(val_set)])
+            test_set  = attach_ref_positions(test_set, ref_coords[len(train_set) + len(val_set):])
+
+            print("✅ Attached ref_positions to train, val, and test Data objects.")
+
         # regular preprocessing if not coarsening
         train_set = preprocessing.preprocess_dataset(train_set, config)
         val_set = preprocessing.preprocess_dataset(val_set, config)
         test_set = preprocessing.preprocess_dataset(test_set, config)
+        
+
+
+    # Debugging: Show full node features for first 3 graphs in each split
+    for dataset, name in [(train_set, "Train"), (val_set, "Val"), (test_set, "Test")]:
+        for i in range(3):  # Print first 3 graphs
+            print_full_node_features(dataset[i], i, name)
 
 
     seed = config.run_number
@@ -406,53 +490,16 @@ def train_and_eval(config, cluster=None):
 
     out_channels = config.out_dim
 
-    # ----------------------------------------------------------------------
-    # Conditionally attach reference positions
-    # Only if config.use_ref_positions is True
-    # ----------------------------------------------------------------------
-    if getattr(config, "use_ref_positions", False):
-        import os
-
-        # Path to the reference coordinates file
-        coords_path = "/itet-stor/jangus/net_scratch/Thesis_J/CoRe-GD/data/Rome/dataset_rome_base_saved/xxx_ref_coordinates.npy"
-
-        if os.path.exists(coords_path):
-            print(f"Loading reference coordinates from: {coords_path}")
-            all_coords = np.load(coords_path, allow_pickle=True)
-
-            # Ensure the dataset splits match
-            train_size = len(train_set)
-            val_size   = len(val_set)
-            test_size  = len(test_set)
-
-            assert len(all_coords) == train_size + val_size + test_size, \
-                f"Mismatch: coord file has {len(all_coords)} entries, expected {train_size + val_size + test_size}"
-
-            # Slice into train, val, test
-            train_coords = all_coords[:train_size]
-            val_coords   = all_coords[train_size : train_size + val_size]
-            test_coords  = all_coords[train_size + val_size : ]
-
-            # Attach coordinates
-            train_set = preprocessing.attach_ref_positions(train_set, train_coords)
-            val_set   = preprocessing.attach_ref_positions(val_set,   val_coords)
-            test_set  = preprocessing.attach_ref_positions(test_set,  test_coords)
-
-            print("Attached ref_positions to train, val, and test Data objects.")
-        else:
-            print(f"Warning: coords_path '{coords_path}' not found. Skipping ref_positions attachment.")
-    else:
-        print("config.use_ref_positions is False. Skipping reference positions attachment.")
+    
 
 
     # Build DataLoaders
-
-
-    train_loader = DataLoader(train_set, batch_size=config.batch_size, shuffle=True)
+    train_loader = DataLoader(train_set, batch_size=config.batch_size, shuffle=False)
     valid_loader = DataLoader(val_set, batch_size=1, shuffle=False) #batch size to account for metric
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)                                     
 
-    model = get_model(config).to(device) #loads model onto proper device if defined
+    # loads model onto proper device if defined
+    model = get_model(config).to(device) 
 
     replay_buffer_list = get_initial_embeddings(model, device, train_loader, number=config.replay_buffer_size if config.use_replay_buffer else 1) #not sure what this does. Is it some kind of optimisation for running the models? get_initial_embeddings
     replay_loader = DataLoader(replay_buffer_list, batch_size=config.batch_size, shuffle=True)
@@ -479,20 +526,12 @@ def train_and_eval(config, cluster=None):
         if config.randomize_between_epochs and config.laplace_eigvec > 0:
             train_set = preprocessing.reset_eigvecs(train_set, config) # resets eigenvectors. 
         # train function called below every epoch. Also, changed all loss_fun to combined_loss for now
-        loss, l1_loss, l2_loss = train(model=model, device=device, data_loader=train_loader, replay_loader=replay_loader, optimizer = optimizer, layer_dist=layer_dist, loss_fun=combined_loss_fn, replay_buffer_list=replay_buffer_list, replay_train_prob=config.replay_train_replacement_prob, replay_prob=config.replay_buffer_replacement_prob, config=config, coarsened_graphs=train_coarsened, coarsening_matrices=train_matrices)
-        valid_loss, valid_loss_normalized = flexible_test(model, device, valid_loader, loss_fun=combined_loss_fn, layer_num=layer_num, config=config, coarsened_graphs=val_coarsened, coarsening_matrices=val_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
-        test_loss, test_loss_normalized = flexible_test(model, device, test_loader, loss_fun=combined_loss_fn, layer_num=layer_num, config=config, coarsened_graphs=test_coarsened, coarsening_matrices=test_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
+        loss, l1_loss, l2_loss = train(model=model, device=device, data_loader=train_loader, replay_loader=replay_loader, optimizer = optimizer, layer_dist=layer_dist, loss_fun=loss_fun, replay_buffer_list=replay_buffer_list, replay_train_prob=config.replay_train_replacement_prob, replay_prob=config.replay_buffer_replacement_prob, config=config, coarsened_graphs=train_coarsened, coarsening_matrices=train_matrices)
+        valid_loss, valid_loss_normalized = flexible_test(model, device, valid_loader, loss_fun=loss_fun, layer_num=layer_num, config=config, coarsened_graphs=val_coarsened, coarsening_matrices=val_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
+        test_loss, test_loss_normalized = flexible_test(model, device, test_loader, loss_fun=loss_fun, layer_num=layer_num, config=config, coarsened_graphs=test_coarsened, coarsening_matrices=test_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
+        
+        
         # add the losses for the overlap and the stress seperately so we can see them on wandb
-
-#        # Optionally, compute the "test2" diagnostics:
-#        metrics_dict = test2(
-#            model, device, test_loader,
-#            overlap_loss_fun=overlap_loss,  # same overlap loss used in training
-#            stress_loss_fun=stress_loss,    # same stress loss used in training
-#            layer_num=10,
-#            stress_weight=1.0,
-#            overlap_weight=0.5
-#        )
 
         # helper functions to get separate stress & overlap losses
         train_stress, train_overlap, train_combined = test_split_losses(
@@ -510,10 +549,12 @@ def train_and_eval(config, cluster=None):
             stress_loss_fn, overlap_loss_fn, combined_loss_fn,
             layer_num=layer_num
         )
+        """
         old_loss, old_loss_normalized = old_test(model, device, train_loader, loss_fun=losses.ScaledStress(), layer_num=layer_num, coarsened_graphs=val_coarsened, coarsening_matrices=val_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
         old_valid_loss, old_valid_loss_normalized = old_test(model, device, valid_loader, loss_fun=losses.ScaledStress(), layer_num=layer_num, coarsened_graphs=test_coarsened, coarsening_matrices=test_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
         old_test_loss, old_test_loss_normalized = old_test(model, device, test_loader, loss_fun=losses.ScaledStress(), layer_num=layer_num, coarsened_graphs=test_coarsened, coarsening_matrices=test_matrices, coarsen=config.coarsen, noise=config.coarsen_noise)
-    
+        """
+        
         if valid_loss <= best_valid_loss:
             best_valid_loss = valid_loss
             best_test_loss = test_loss
@@ -549,7 +590,7 @@ def train_and_eval(config, cluster=None):
 
 
         # lines below are just logging and saving to wandb
-        # 4) Add the separate losses to your logging dict
+        # Add the separate losses to your logging dict
         epoch_info = {
             'run': config.run_number,
             'epoch': epoch,
@@ -580,17 +621,15 @@ def train_and_eval(config, cluster=None):
 
 
             # Old loss values
-            'old_train_loss': old_loss,
-            'old_train_loss_normalized': old_loss_normalized,
-            'old_valid_loss': old_valid_loss,
-            'old_valid_loss_normalized': old_valid_loss_normalized,
-            'old_test_loss': old_test_loss,
-            'old_test_loss_normalized': old_test_loss_normalized,
+            # epoch_info['old_train_loss'] = None
+            # epoch_info['old_train_loss_normalized'] = None
+            # epoch_info['old_valid_loss'] = None
+            # epoch_info['old_valid_loss_normalized'] = None
+            # epoch_info['old_test_loss'] = None
+            # epoch_info['old_test_loss_normalized'] = None
         }
 
-        #epoch_info.update(metrics_dict) #just adding the metrics_dict to the epoch info so we see them too.
-
-        # Now log everything at once
+        # Log everything at once
         print(json.dumps(epoch_info))
         wandb.log(epoch_info)
 

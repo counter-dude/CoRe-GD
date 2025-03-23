@@ -45,14 +45,16 @@ def main():
     """
 
     # I just copy these 3 lines from the train function
-    train_set, val_set, test_set = get_dataset(config.dataset)
+    train_set, val_set, test_set = get_dataset(config.dataset)  
     test_set = preprocess_dataset(test_set, config)
 
+    """
     print("Checking test dataset after preprocessing:")
     for idx, data in enumerate(test_set):
         print(f"Graph {idx} attributes after preprocessing: {dir(data)}")
         if not hasattr(data, 'x_orig'):
             print(f"Graph {idx} is missing 'x_orig'")
+    """
 
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
 
@@ -70,13 +72,15 @@ def main():
             # '5' is the number of iterations or message passing steps
             output = model(data, 5)  
             coords = output.cpu().numpy()  # shape [num_nodes, 2]
-
+            
+            """
             # Just a couple tests here to check that sizes are correct 
             # and I can add the boxes saved earlier
             num_nodes = data.num_nodes  # Number of nodes in the current graph
             print(f"Output size: {output.size()} | Number of nodes in graph: {num_nodes}")
             assert output.size(0) == num_nodes, \
                 "Mismatch between output size and number of nodes in the graph!"
+            """
 
         # Collect coords for saving in our single .npy file
         all_coords.append(coords)
@@ -99,6 +103,7 @@ def main():
         output_path = os.path.join(output_dir, f"graph_{idx}.graphml")
         nx.write_graphml(nx_graph, output_path)
 
+    """
     # After the loop, save all inferred coords to a single file IF it doesn't exist yet
     if getattr(config, "save_base_model_coords", False):
         coord_save_path = os.path.join(output_dir, "base_model_coords.npy")
@@ -112,7 +117,7 @@ def main():
             print(f"All inferred coords saved to: {coord_save_path}")
     else:
         print("config.save_base_model_coords=False, so not saving base_model_coords.npy.")
-
+    """
 
     print(f"Inference complete. GraphML files saved to {output_dir}")
 

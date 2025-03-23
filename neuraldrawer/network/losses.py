@@ -209,8 +209,8 @@ class RefPositionLoss(nn.Module):
 
     def forward(self, pred_positions, batch):
         # If there's no ref_positions, return 0 so we don't break training
-        if not hasattr(batch, "ref_positions"):
-            return torch.tensor(0.0, device=pred_positions.device)
+        # if not hasattr(batch, "ref_positions"):
+        #     return torch.tensor(0.0, device=pred_positions.device)  --> should always have the pred positions....
 
         ref_positions = batch.ref_positions.to(pred_positions.device)
         sq_diffs = (pred_positions - ref_positions).pow(2).sum(dim=-1)  # MSE per node

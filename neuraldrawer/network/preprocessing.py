@@ -229,16 +229,31 @@ def add_2d_box_features(data, config):
     #width = torch.rand((dim, 1), device=data.x.device) * (1.0 - 0.1) + 0.1
     #height = torch.rand((dim, 1), device=data.x.device) * (1.0 - 0.1) + 0.1
 
-    #quick change to have constant box sizes. This will help us to compare different runs:
+    #quick change to have constant box sizes. This will help us to compare different runs: Set sizes to 0.5 for now, since the sizes might be too big relative to the graph coordinates.
     dim = data.num_nodes
-    width = torch.ones((dim, 1), device=data.x.device)
-    height = torch.ones((dim, 1), device=data.x.device)
+    width = torch.full((dim, 1), 0.5, device=data.x.device)
+    height = torch.full((dim, 1), 0.5, device=data.x.device)
 
     # Save the original sizes for later use
     data.orig_sizes = torch.cat((width, height), dim=1)
 
     # Concatenate width & height to the node features
     data.x = torch.cat((data.x, width, height), dim=1)
+    return data
+
+def add_ref_position_features(data, config):
+    """
+    Adds reference position (x, y) coordinates to the node features.
+
+    Args:
+        data (Data): A PyG Data object with .ref_positions
+        config: Configuration object (not used, but included for consistency)
+
+    Returns:
+        Data: Updated Data object with ref_positions concatenated to x
+    """
+    ref_pos = data.ref_positions.to(data.x.device)
+    data.x = torch.cat((data.x, ref_pos), dim=1)
     return data
 
 def preprocess_dataset(datalist, config):
@@ -292,6 +307,10 @@ def preprocess_dataset(datalist, config):
         # Add 2D box features (width, height)
         data = add_2d_box_features(data, config)
 
+        # Only add ref position features if data.ref_positions exists:
+        if hasattr(data, "ref_positions"):
+            data = add_ref_position_features(data, config)
+
         # Store the final features in x_orig for reference
         data.x_orig = torch.clone(data.x)
         
@@ -322,16 +341,19 @@ def reset_eigvecs(datalist, config):
         datalist[idx].x_orig[:,-config.laplace_eigvec:] = spectral_features
     return datalist
 
+
 def attach_ref_positions(datalist, coords_list):
     """
-    Attach reference positions (x,y) to each Data object in the datalist. These are the positions from our base model. 
+    Attach reference positions (x, y) from coords_list to each Data object in datalist.
+    Each coords_list[i] is a (num_nodes_i, 2) array of reference coords.
 
     Args:
-        datalist (list[Data]): List of PyG Data objects.
-        coords_list (list[np.ndarray]): List of NumPy arrays, where
-            coords_list[i].shape == [num_nodes_i, 2].
+        datalist (list[Data]): List of PyTorch Geometric Data objects.
+        coords_list (list[np.ndarray]):
+            coords_list[i] is shape [num_nodes_i, 2] for the i-th graph.
+
     Returns:
-        list[Data]: The modified list of Data objects with .ref_positions set.
+        list[Data]: The same list but each Data object now has .ref_positions (torch.Tensor).
     """
     print(f"Length of datalist: {len(datalist)}")
     print(f"Length of coords_list: {len(coords_list)}")
@@ -340,9 +362,19 @@ def attach_ref_positions(datalist, coords_list):
         raise ValueError("Mismatch in length: datalist vs. coords_list")
 
     for i, data in enumerate(datalist):
-        ref_np = coords_list[i]  # shape [num_nodes, 2]
-        # Convert to PyTorch
-        ref_torch = torch.tensor(ref_np, dtype=torch.float)
-        data.ref_positions = ref_torch
+        coords_np = coords_list[i]  # shape (num_nodes, 2)
+        coords_torch = torch.tensor(coords_np, dtype=torch.float)
+        data.ref_positions = coords_torch  # store as a new attribute
 
+    return datalist
+
+def attach_dummy_ref_positions(datalist):
+    """
+    For each Data object in 'datalist', if it does NOT already 
+    have .ref_positions, attach a dummy Nx2 of zeros.
+    """
+    for data in datalist:
+        if not hasattr(data, "ref_positions"):
+            coords_torch = torch.zeros((data.num_nodes, 2), dtype=torch.float)
+            data.ref_positions = coords_torch
     return datalist
