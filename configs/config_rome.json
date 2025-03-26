@@ -44,7 +44,7 @@
     "coarsen": false,
     "coarsen_noise": 0.1,
     "stress_weight": 0.0,
-    "overlap_weight": 10000.0,
+    "overlap_weight": 0.0,
     "position_weight": 1.0,
     "use_ref_positions": true,
     "use_ref_positions_for_inference": true,

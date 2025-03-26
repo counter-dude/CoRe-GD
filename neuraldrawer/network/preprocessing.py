@@ -307,9 +307,28 @@ def preprocess_dataset(datalist, config):
         # Add 2D box features (width, height)
         data = add_2d_box_features(data, config)
 
+        data = add_ref_position_features(data, config)
+        # print("DEBUG FOR REFPOSITIONS! BY JE!!")
+        # print("data.x.shape =", data.x.shape)
+        # print("Last 2 columns of data.x[:5]:\n", data.x[:5, -2:])
         # Only add ref position features if data.ref_positions exists:
-        if hasattr(data, "ref_positions"):
-            data = add_ref_position_features(data, config)
+
+        # This test worked...
+        # if hasattr(data, "ref_positions"):
+        #     data = add_ref_position_features(data, config)
+
+        #     # DEBUG PRINT
+        #     print(f"\n[DEBUG REFPOSITIONS] Graph index: {idx}")
+        #     print(f"  data.x.shape  = {tuple(data.x.shape)}")
+
+        #     # Print the first 5 nodes' last two columns (where ref coords should be)
+        #     print("  Last 2 columns of data.x[:5]:")
+        #     print(data.x[:5, -2:])
+
+        #     # Also print the first 5 reference positions themselves
+        #     print("  data.ref_positions[:5]:")
+        #     print(data.ref_positions[:5])
+
 
         # Store the final features in x_orig for reference
         data.x_orig = torch.clone(data.x)
@@ -332,13 +351,57 @@ def reset_randomized_features_batch(batch, config):
     return batch
 
 
+# def reset_eigvecs(datalist, config):
+#     pe_transform = AddLaplacian(k=config.laplace_eigvec, attr_name="laplace_ev", is_undirected=True, use_cupy=config.use_cupy)
+#     for idx in range(len(datalist)):
+#         datalist[idx] = pe_transform(datalist[idx])
+#         spectral_features = datalist[idx].laplace_ev
+#         datalist[idx].x[:,-config.laplace_eigvec:] = spectral_features
+#         datalist[idx].x_orig[:,-config.laplace_eigvec:] = spectral_features
+#     return datalist
+
 def reset_eigvecs(datalist, config):
-    pe_transform = AddLaplacian(k=config.laplace_eigvec, attr_name="laplace_ev", is_undirected=True, use_cupy=config.use_cupy)
-    for idx in range(len(datalist)):
-        datalist[idx] = pe_transform(datalist[idx])
-        spectral_features = datalist[idx].laplace_ev
-        datalist[idx].x[:,-config.laplace_eigvec:] = spectral_features
-        datalist[idx].x_orig[:,-config.laplace_eigvec:] = spectral_features
+    """
+    Recompute Laplacian eigenvectors for each Data object and
+    overwrite the original Laplacian block in `data.x` safely.
+    """
+    # 1) Create the transform that computes Laplacian eigenvectors
+    pe_transform = AddLaplacian(
+        k=config.laplace_eigvec,
+        attr_name="laplace_ev",
+        is_undirected=True,
+        use_cupy=config.use_cupy
+    )
+
+    # 2) Figure out exactly where the Laplacian features were placed in data.x
+    #    based on your feature concatenation in `preprocess_dataset`.
+    rand_dim = config.random_in_channels
+
+    if config.use_beacons:
+        beacon_dim = config.num_beacons * config.encoding_size_per_beacon
+    else:
+        beacon_dim = 0
+
+    lap_dim = config.laplace_eigvec   # how many Laplacian eigenvectors
+    box_dim = 2                       # (width, height)
+    ref_dim = 2                       # (ref_x, ref_y)
+
+    # Start of Laplacian block is right after random + beacon
+    lap_start = rand_dim + beacon_dim
+    lap_end   = lap_start + lap_dim   # exclusive index
+
+    for idx, data in enumerate(datalist):
+        # 3) Recompute the Laplacian
+        data = pe_transform(data)
+        spectral_features = data.laplace_ev  # shape [num_nodes, lap_dim]
+
+        # 4) Overwrite only the 'lap_start:lap_end' slice in data.x / x_orig
+        #    ensuring not to touch the columns for box or ref positions
+        data.x[:, lap_start:lap_end] = spectral_features
+        data.x_orig[:, lap_start:lap_end] = spectral_features
+
+        datalist[idx] = data
+
     return datalist
 
 
@@ -365,16 +428,9 @@ def attach_ref_positions(datalist, coords_list):
         coords_np = coords_list[i]  # shape (num_nodes, 2)
         coords_torch = torch.tensor(coords_np, dtype=torch.float)
         data.ref_positions = coords_torch  # store as a new attribute
+        print(f"[attach_ref_positions] Graph {i}")
+        print(f"  ref_positions shape: {coords_torch.shape}")
+        print(f"  First 3 ref_positions:\n{coords_torch[:3]}")
+        print(f"  num_nodes in graph: {data.num_nodes}")
 
-    return datalist
-
-def attach_dummy_ref_positions(datalist):
-    """
-    For each Data object in 'datalist', if it does NOT already 
-    have .ref_positions, attach a dummy Nx2 of zeros.
-    """
-    for data in datalist:
-        if not hasattr(data, "ref_positions"):
-            coords_torch = torch.zeros((data.num_nodes, 2), dtype=torch.float)
-            data.ref_positions = coords_torch
     return datalist

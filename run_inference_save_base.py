@@ -83,7 +83,8 @@ def main():
     model.eval()
 
     # -- Load ONLY the test set to do the usual inference (like your original code) --
-    _, _, test_set = get_dataset(config.dataset)
+    # _, _, test_set = get_dataset(config.dataset)
+    train_set, val_set, test_set = get_dataset(config.dataset)
     if getattr(config, "use_ref_positions_for_inference", False):
         print("🔹 Attaching real reference positions for inference.")
 
@@ -99,14 +100,15 @@ def main():
         num_test_graphs = len(test_set)
 
         # If train+val were size X, and test is Y, we want ref_coords[-Y:]
-        test_set = attach_ref_positions(test_set, ref_coords[-num_test_graphs:])
+        # test_set = attach_ref_positions(test_set, ref_coords[-num_test_graphs:])
+
+        # Attach reference positions to dataset splits
+        train_set = attach_ref_positions(train_set, ref_coords[:len(train_set)])
+        val_set   = attach_ref_positions(val_set, ref_coords[len(train_set):len(train_set) + len(val_set)])
+        test_set  = attach_ref_positions(test_set, ref_coords[len(train_set) + len(val_set):])
+
 
     test_set = preprocess_dataset(test_set, config)
-
-    print("\n🔎 DEBUG: Checking node features of first test graph")
-    print(f" - Num nodes: {example.num_nodes}")
-    print(f" - data.x.shape: {example.x.shape}")
-    print(f" - data.x[:5]:\n{example.x[:5]}")  # Print first 5 node features
 
     print("Running 'normal' inference on TEST set...")
     _ = run_inference_on_dataset(
