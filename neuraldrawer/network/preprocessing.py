@@ -229,10 +229,10 @@ def add_2d_box_features(data, config):
     #width = torch.rand((dim, 1), device=data.x.device) * (1.0 - 0.1) + 0.1
     #height = torch.rand((dim, 1), device=data.x.device) * (1.0 - 0.1) + 0.1
 
-    #quick change to have constant box sizes. This will help us to compare different runs: Set sizes to 0.5 for now, since the sizes might be too big relative to the graph coordinates.
+    #quick change to have constant box sizes. This will help us to compare different runs: Set sizes to 0.5(1 now) for now, since the sizes might be too big relative to the graph coordinates.
     dim = data.num_nodes
-    width = torch.full((dim, 1), 0.5, device=data.x.device)
-    height = torch.full((dim, 1), 0.5, device=data.x.device)
+    width = torch.full((dim, 1), 1, device=data.x.device)
+    height = torch.full((dim, 1), 1, device=data.x.device)
 
     # Save the original sizes for later use
     data.orig_sizes = torch.cat((width, height), dim=1)
@@ -434,3 +434,53 @@ def attach_ref_positions(datalist, coords_list):
         print(f"  num_nodes in graph: {data.num_nodes}")
 
     return datalist
+
+
+
+def preprocess_single_graph_inference(data, config): #this does the same but doesn't overwrite the boxes, since the agora datasets have their own box sizes
+    """
+    Preprocesses a single PyG Data object for inference, preserving original box sizes.
+
+    Args:
+        data (Data): PyTorch Geometric Data object, already containing `ref_positions` and `orig_sizes`.
+        config (object): Configuration object with preprocessing parameters.
+
+    Returns:
+        Data: Processed Data object.
+    """
+    # Beacon embeddings (if enabled)
+    if config.use_beacons:
+        single_list = compute_positional_encodings([data], config.num_beacons, config.encoding_size_per_beacon)
+        data = single_list[0]
+        beacons = data.pe
+    else:
+        beacons = torch.zeros(data.num_nodes, 0, dtype=torch.float, device=data.x.device)
+
+    # Laplacian spectral features (if enabled)
+    spectral_features = torch.zeros(data.num_nodes, 0, dtype=torch.float, device=data.x.device)
+    if config.laplace_eigvec > 0:
+        pe_transform = AddLaplacian(
+            k=config.laplace_eigvec,
+            attr_name="laplace_ev",
+            is_undirected=True,
+            use_cupy=config.use_cupy
+        )
+        data = pe_transform(data)
+        spectral_features = data.laplace_ev
+
+    # Random features
+    rand_feats = torch.rand(data.num_nodes, config.random_in_channels, dtype=torch.float, device=data.x.device)
+
+    # Concatenate features: random + beacon + spectral
+    data.x = torch.cat((rand_feats, beacons, spectral_features), dim=1)
+
+    # Preserve original box sizes from data.orig_sizes
+    data.x = torch.cat((data.x, data.orig_sizes.to(data.x.device)), dim=1)
+
+    # Add reference positions
+    data.x = torch.cat((data.x, data.ref_positions.to(data.x.device)), dim=1)
+
+    # Store the final features in x_orig for reference
+    data.x_orig = torch.clone(data.x)
+
+    return data
